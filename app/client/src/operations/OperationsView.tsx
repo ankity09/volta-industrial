@@ -33,10 +33,7 @@ import { IngestionFlow } from '@/architecture/IngestionFlow';
 // Lazy-load the 3D plant floor component; if it doesn't exist yet,
 // fallback gracefully so the build doesn't break.
 const PlantFloor3D = lazy(() =>
-  import('./plantfloor/PlantFloor3D').then((m) => ({ default: m.PlantFloor3D })).catch(() => {
-    // Return a placeholder if the module doesn't exist
-    return { default: () => <div className="h-64 bg-muted rounded-xl" /> };
-  }),
+  import('../plantfloor/PlantFloor3D').then((m) => ({ default: m.PlantFloor3D })),
 );
 
 export function OperationsView() {
