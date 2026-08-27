@@ -1,8 +1,8 @@
 /**
- * Server boot — the ONE place where all backend pieces get wired together.
+ * Server boot, the ONE place where all backend pieces get wired together.
  *
  * Template responsibilities, in order:
- *   1. Read `config/app.json` (the use-case knobs — agent endpoint, warehouse,
+ *   1. Read `config/app.json` (the use-case knobs, agent endpoint, warehouse,
  *      dashboard, Delta sync tables, branding, scripted demo chain).
  *   2. Create the AppKit app with the 3 plugins we rely on:
  *        - server()     → Express, OBO auth forwarding, serve-the-client
@@ -19,23 +19,21 @@
  * REPURPOSING THIS TEMPLATE
  * ─────────────────────────────────────────────────────────────────────
  * The structural wiring (boot order, plugin set, route registration) is
- * use-case agnostic — leave it alone. Customization happens here:
+ * use-case agnostic, leave it alone. Customization happens here:
  *
- *   • `config/app.json`              — branding, agent endpoint name OR
+ *   • `config/app.json`             , branding, agent endpoint name OR
  *                                       Genie space ID, MLflow experiment
  *                                       path, dashboard id, Delta source
  *                                       tables, scripted demo prompts.
- *   • `db/schema.ts`                 — Lakebase OLTP tables (the writable
- *                                       mirror the agent + UI both use).
- *   • `db/sync.ts`                   — one-shot copy from Delta → Lakebase
+ *   • `db/schema.ts`                , Lakebase OLTP tables (the writable
+ *                                       work-orders table the agent + UI use).
+ *   • `db/sync.ts`                  , one-shot copy from Delta → Lakebase
  *                                       at boot. Update the table list.
- *   • `db/queries/returns.ts`        — domain queries; rename + rewrite.
- *   • `agent/refundops.ts`           — the agent itself. Rename the file
- *                                       to match your domain, update the
- *                                       import below, and rewrite tools +
- *                                       instructions.
- *   • `routes/returns.ts`            — REST endpoints for the queue. Add
- *                                       new routes for your domain.
+ *   • `db/queries/maintenance.ts`   , plant-floor queries + the writable
+ *                                       work-order helper.
+ *   • `agent/plantfloor.ts`         , the agent itself: the five tools +
+ *                                       the three-phase action chain.
+ *   • `routes/charts.ts`            , analytics chart endpoints for the queue.
  *
  * Cross-file: `client/src/shared/types.ts` is the single source of truth
  * for the domain types and is the FIRST thing to update when swapping
@@ -87,15 +85,15 @@ import { registerDevLogRoutes } from './routes/dev-log.js';
 
 type AppConfig = {
   /** MAS serving-endpoint name. Set this OR `genieSpaceId` (one of the
-   * two) — the agent registers `ask_mas` if this is set, `ask_genie`
+   * two), the agent registers `ask_mas` if this is set, `ask_genie`
    * otherwise. See server/agent/tools/{mas,genie}.ts. */
   masEndpointName?: string;
   /** Genie space ID (32-char hex). Set this OR `masEndpointName`.
-   * The two are mutually-exclusive in the default template — if your
+   * The two are mutually-exclusive in the default template, if your
    * demo really needs both, edit makeTools() to register both factories. */
   genieSpaceId?: string;
   /** Pinned MLflow experiment id, used by AppHeader's "Experiment" link.
-   * Optional — most demos rely on `agentMlflowExperimentPath` below to
+   * Optional, most demos rely on `agentMlflowExperimentPath` below to
    * auto-create a per-app experiment instead of pinning a legacy one. */
   mlflowExperimentId?: string;
   /** Workspace path where the agent's traces will be recorded. Auto-
@@ -104,13 +102,13 @@ type AppConfig = {
    * what the chat "View trace" deep-link points at.
    *
    * IMPORTANT: leave this set in `config/app.json`. If empty, traces have
-   * nowhere to land and the chat shows "Trace pending…" forever — which
+   * nowhere to land and the chat shows "Trace pending…" forever, which
    * is also why the previous version of this template had a real value
    * baked in. The path should be unique per app (we use the app name)
    * so multiple demos in the same workspace don't share an experiment.
    *
    * Format: `/Users/<email>/<app-name>-agent-traces`
-   * Example: `/Users/me@databricks.com/luxebeauty-operations-agent-traces`
+   * Example: `/Users/me@databricks.com/volta-plant-floor-agent-traces`
    *
    * The path is created via the MLflow REST API (POST /api/2.0/mlflow/
    * experiments/create); the running app's principal must have CAN_EDIT
@@ -153,20 +151,20 @@ type AppConfig = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────
-// Validate config/app.json at boot — fail fast with one clear message
+// Validate config/app.json at boot, fail fast with one clear message
 // instead of letting a typo surface as a 500 deep in the agent loop or
 // a literal `<your-email>` reaching MLflow.
 //
 // Schema mirrors the `AppConfig` type above; `_*_help` keys in the JSON
 // are documentation and pass through unread. Unknown extra keys are
-// allowed (`.passthrough()`-equivalent — we only assert the required shape).
+// allowed (`.passthrough()`-equivalent, we only assert the required shape).
 // ─────────────────────────────────────────────────────────────────────────
 
 const tablesSchema = z.object({
   lineStatus: z.string().min(1),
   openAtrisk: z.string().min(1),
   parts: z.string().min(1),
-  // Optional — the ML maintenance recommendations table, built by the trainee
+  // Optional, the ML maintenance recommendations table, built by the trainee
   // in the workshop ML step. db/sync.ts tolerates it being absent.
   maintenanceRecommendations: z.string().optional(),
 });
@@ -200,7 +198,7 @@ const appConfigSchema = z
       .object({
         // NOT `.min(1)`: in local-dev / preview mode DEMO_CATALOG/DEMO_SCHEMA
         // may be unset, so the `${DEMO_CATALOG}` placeholders resolve to "".
-        // We must BOOT (degraded) rather than crash — the Delta→Lakebase sync
+        // We must BOOT (degraded) rather than crash, the Delta→Lakebase sync
         // already no-ops when DATABRICKS_WAREHOUSE_ID is unset (db/sync.ts),
         // which is the same condition, so empty catalog/schema never reaches
         // a query. Deployed mode always has all three set together.
@@ -210,7 +208,7 @@ const appConfigSchema = z
       })
       .optional(),
   });
-  // Strict by default — unknown keys are a config typo, not a feature. The
+  // Strict by default, unknown keys are a config typo, not a feature. The
   // file is JSONC (parsed via jsonc-parser) so help text lives in real
   // `//` comments rather than `_*_help` JSON keys.
 
@@ -241,7 +239,7 @@ function loadAppConfig(): AppConfig {
 
   // Parse with jsonc-parser so config/app.json supports `//` and `/* */`
   // comments + trailing commas. We still write a `.json` file (no extension
-  // change, no DAB / IDE churn) — only the parser is more permissive.
+  // change, no DAB / IDE churn), only the parser is more permissive.
   const errors: ParseError[] = [];
   const parsed: unknown = parseJsonc(raw, errors, { allowTrailingComma: true });
   if (errors.length > 0) {
@@ -273,7 +271,7 @@ function loadAppConfig(): AppConfig {
   //     (mlflow paths are opt-in; missing → "Trace pending…" but the app
   //      still boots and serves the demo).
   //   - ERROR for fields the rest of the boot depends on (the dashboard
-  //     iframe + data sync — empty <placeholder> means the agent didn't
+  //     iframe + data sync, empty <placeholder> means the agent didn't
   //     substitute and the app will half-work in confusing ways).
   const hasPlaceholder = (v: unknown): v is string =>
     typeof v === 'string' && /<[^>]+>/.test(v);
@@ -285,7 +283,7 @@ function loadAppConfig(): AppConfig {
   for (const [k, v] of warnPlaceholders) {
     if (hasPlaceholder(v)) {
       console.warn(
-        `[config] ${k} contains an unfilled <placeholder>: ${v} — feature will be skipped at boot.`,
+        `[config] ${k} contains an unfilled <placeholder>: ${v}, feature will be skipped at boot.`,
       );
     }
   }
@@ -302,7 +300,7 @@ function loadAppConfig(): AppConfig {
       .map(([k, v]) => `  • ${k} = ${v} (contains a <placeholder>)`)
       .join('\n');
     throw new Error(
-      `[config] ${CONFIG_PATH} has unfilled placeholders — replace them with real values:\n${list}`,
+      `[config] ${CONFIG_PATH} has unfilled placeholders, replace them with real values:\n${list}`,
     );
   }
 
@@ -315,7 +313,7 @@ const appConfig = loadAppConfig();
 let agentExperimentId: string | null = null;
 
 // ============================================================================
-// Error logging — compact by default so bulk-insert failures (DrizzleQueryError
+// Error logging, compact by default so bulk-insert failures (DrizzleQueryError
 // with thousands of params) don't flood the terminal.
 // ============================================================================
 
@@ -328,7 +326,7 @@ function logErrorCompact(prefix: string, err: unknown): void {
     query?: string;
   };
   // Drizzle stuffs the full query + every parameter value into err.message,
-  // which can be 100k+ chars on bulk inserts — truncate everything hard.
+  // which can be 100k+ chars on bulk inserts, truncate everything hard.
   const parts = [truncate(e.message ?? String(err), 300)];
   if (e.cause?.code) parts.push(`pg=${e.cause.code}`);
   if (e.cause?.constraint) parts.push(`constraint=${e.cause.constraint}`);
@@ -338,7 +336,7 @@ function logErrorCompact(prefix: string, err: unknown): void {
   // Print the header + stack frames in a SINGLE console.error call so the
   // logger emits one timestamp/level prefix with indented continuation lines.
   // Strip the leading "Name: message" lines from e.stack (Node duplicates the
-  // message at the top) — we already printed the message above.
+  // message at the top), we already printed the message above.
   const header = `${prefix} ${parts.join(' | ')}`;
   const frames = e.stack
     ? e.stack
@@ -371,7 +369,7 @@ const t0 = Date.now();
 const ms = () => `${Date.now() - t0}ms`;
 
 // ============================================================================
-// Migration gate — block DB-dependent routes until migrations finish.
+// Migration gate, block DB-dependent routes until migrations finish.
 //
 // Server starts accepting traffic immediately so the UI's shell can render,
 // but any /api/* route that touches the DB waits on `migrationsReady`. If
@@ -380,7 +378,7 @@ const ms = () => `${Date.now() - t0}ms`;
 // has to chase).
 //
 // If migrations actually FAIL, `migrationsReady` rejects and the gate
-// returns 503 with the real error message — which is a real bug worth
+// returns 503 with the real error message, which is a real bug worth
 // surfacing, the LLM customizing the template can see it and act on it.
 //
 // NOTE: these are declared BEFORE createApp because onPluginsReady (which
@@ -407,11 +405,11 @@ let migrationsReady: Promise<void> = new Promise(() => {
   // No-op until the background-init block replaces this.
 });
 
-// Drizzle handle — assigned in onPluginsReady once the lakebase pool exists,
+// Drizzle handle, assigned in onPluginsReady once the lakebase pool exists,
 // read by both the route registrations and the background-init block.
 let db: ReturnType<typeof createDb>;
 
-// No `const appkit =` — everything we need from the app is used inside
+// No `const appkit =`, everything we need from the app is used inside
 // onPluginsReady (via its typed `appkit` param); the server auto-starts and
 // we never reference the returned map at the top level.
 await createApp({
@@ -422,18 +420,18 @@ await createApp({
     server(),
     // The lakebase pool reads PGHOST/PGDATABASE/PGPORT/PGSSLMODE +
     // LAKEBASE_* from env; no config needed here. (Pre-0.41 this passed
-    // branch/database to resolve resource bindings — those args were removed.)
+    // branch/database to resolve resource bindings, those args were removed.)
     lakebase(),
     analytics({}),
   ],
-  // Runs after plugins are set up but BEFORE the server listens — the place
+  // Runs after plugins are set up but BEFORE the server listens, the place
   // to register custom routes (was `extend()` + manual `start()` pre-0.41).
   // The server auto-starts when this returns; background init is launched
   // here as fire-and-forget (the /api gate awaits `migrationsReady`).
   onPluginsReady(appkit) {
     db = createDb(appkit.lakebase.pool);
     // Routes registered here (before the server listens). Inlined rather than
-    // hoisted to a helper so `appkit` keeps its precise PluginMap<T> type —
+    // hoisted to a helper so `appkit` keeps its precise PluginMap<T> type, 
     // a standalone param typed as the generic createApp return collapses
     // appkit.server/.analytics to `never`.
     appkit.server.extend((app) => {
@@ -444,7 +442,7 @@ await createApp({
     if (STARTUP_SAFE_PATHS.has(req.path)) return next();
     if (STARTUP_SAFE_PREFIXES.some((p) => req.path.startsWith(p))) return next();
     if (migrationsFailure) {
-      // Real bug — the LLM running the template needs to see this in the
+      // Real bug, the LLM running the template needs to see this in the
       // browser, not just the terminal. Don't try to recover here.
       res.status(503).json({
         error: `Database initialization failed: ${migrationsFailure.message}`,
@@ -464,7 +462,7 @@ await createApp({
         e instanceof Error && e.message === 'startup-timeout';
       res.set('Retry-After', '2').status(503).json({
         error: isTimeout
-          ? 'Database is still initializing — please retry in a moment.'
+          ? 'Database is still initializing, please retry in a moment.'
           : `Database initialization failed: ${(e as Error).message}`,
       });
     }
@@ -474,12 +472,14 @@ await createApp({
     appConfig,
     getAgentExperimentId: () => agentExperimentId,
   });
-  // The template demo registers `ask_mas`. If your demo uses Genie
-  // instead, swap masEndpointName here for genieSpaceId and update
-  // refundops.ts AgentContext + makeTools() accordingly.
-  if (!appConfig.masEndpointName) {
+  // ask_data is config-driven: it uses the MAS endpoint if masEndpointName is
+  // set, else the Genie space if genieSpaceId is set (see plantfloor.ts
+  // makeTools()). If BOTH are empty the agent has no investigation tool, so
+  // warn, the discovery/rank/act tools still work, but "why is LINE-04
+  // trending to a stop?" can't be answered.
+  if (!appConfig.masEndpointName && !appConfig.genieSpaceId) {
     console.warn(
-      '[boot] config.masEndpointName is empty — the agent won\'t have an ask_mas tool. Set it in config/app.json, or wire ask_genie if your demo uses Genie.',
+      '[boot] both config.masEndpointName and config.genieSpaceId are empty, the agent won\'t have an ask_data tool. Set MAS_ENDPOINT_NAME or GENIE_SPACE_ID in config/app.json.',
     );
   }
   registerChatRoutes(app, {
@@ -490,14 +490,14 @@ await createApp({
       agentModel: appConfig.agentModel,
     },
   });
-  // Legacy returns/activity routes — not used in Volta Plant Floor demo.
-  // Trainees build domain-specific routes as needed. Stub imports kept to prevent
-  // accidental use; registrations commented out.
-  // registerReturnsRoutes(app, { db });
-  // registerActivityRoutes(app, { db });
+  // The plant-floor write surface (app.work_orders_app) is driven entirely by
+  // the agent's execute_maintenance_action tool + the client's dataMutated
+  // refetch, so there are no domain CRUD routes to register here. The at-risk
+  // queue reads Lakebase through the agent tools; analytics reads Delta via
+  // the chart routes below.
   registerAdminRoutes(app, { db, data: appConfig.data });
 
-  // Analytics charts — custom route that substitutes catalog/schema into the
+  // Analytics charts, custom route that substitutes catalog/schema into the
   // SQL (the AppKit analytics plugin can't template identifiers). Served at
   // /api/charts/<key>; AnalyticsView feeds the rows to charts via `data`.
   if (appConfig.data) {
@@ -517,7 +517,7 @@ await createApp({
     console.log('[boot] DEV_CLIENT_ERROR_LOG=1 → /api/log/client-error enabled');
   }
 
-  // Global error handler — Express 5 forwards unhandled async rejections
+  // Global error handler, Express 5 forwards unhandled async rejections
   // here automatically, so routes don't need individual try/catch blocks.
   // Logs a compact summary; huge params/queries (e.g. DrizzleQueryError with
   // 12k-param bulk inserts) would otherwise flood the terminal and crash it.
@@ -542,25 +542,25 @@ await createApp({
     startBackgroundInit();
   }, // end onPluginsReady
 });
-console.log(`[boot +${ms()}] Server listening — background init in progress…`);
+console.log(`[boot +${ms()}] Server listening, background init in progress…`);
 
 // ============================================================================
-// Background init — migrations, sync, MLflow. Launched (fire-and-forget) from
+// Background init, migrations, sync, MLflow. Launched (fire-and-forget) from
 // onPluginsReady; the server is already listening by the time these run, and
 // DB-dependent /api routes block on `migrationsReady` via the gate above.
 // ============================================================================
 
 function startBackgroundInit() {
 // Resolve MLflow experiment ID (HTTP call) in parallel with DB init,
-// but defer mlflow.init() until after sync — otherwise the SDK instruments
+// but defer mlflow.init() until after sync, otherwise the SDK instruments
 // sync queries that have no parent span and produces noisy warnings.
 const mlflowIdPromise = (async () => {
   // Resolve the experiment path with a self-derived fallback so tracing works
-  // out of the box on EVERY deploy path — no env plumbing required. Precedence:
+  // out of the box on EVERY deploy path, no env plumbing required. Precedence:
   //   1. explicit `agentMlflowExperimentPath` (from AGENT_MLFLOW_EXPERIMENT_PATH)
   //   2. derived `/Shared/solution_builder/<app-name>-agent-traces`, where the
   //      app name comes from DATABRICKS_APP_NAME (auto-injected in the Apps
-  //      container — the same var @databricks/appkit reads).
+  //      container, the same var @databricks/appkit reads).
   // Only when BOTH are empty (e.g. local dev with neither set) do we degrade.
   const appName = (process.env.DATABRICKS_APP_NAME ?? '').trim();
   const experimentPath =
@@ -568,26 +568,26 @@ const mlflowIdPromise = (async () => {
     (appName ? `/Shared/solution_builder/${appName}-agent-traces` : '');
   if (!experimentPath) {
     // Loud warning so this never silently breaks the "View trace" link in
-    // the chat (the symptom is "Trace pending…" forever — see FeedbackRow).
+    // the chat (the symptom is "Trace pending…" forever, see FeedbackRow).
     // Normally self-derived from DATABRICKS_APP_NAME; set
     // AGENT_MLFLOW_EXPERIMENT_PATH explicitly to override.
     console.warn(
-      '[boot] no MLflow experiment path — agentMlflowExperimentPath is empty AND DATABRICKS_APP_NAME is unset, so nothing could be derived. Agent traces will NOT be recorded and the chat "View trace" link will show "Trace pending…". Set AGENT_MLFLOW_EXPERIMENT_PATH (e.g. /Shared/solution_builder/<app-name>-agent-traces).',
+      '[boot] no MLflow experiment path, agentMlflowExperimentPath is empty AND DATABRICKS_APP_NAME is unset, so nothing could be derived. Agent traces will NOT be recorded and the chat "View trace" link will show "Trace pending…". Set AGENT_MLFLOW_EXPERIMENT_PATH (e.g. /Shared/solution_builder/<app-name>-agent-traces).',
     );
     return null;
   }
   const host = (process.env.DATABRICKS_HOST ?? '').replace(/\/$/, '');
   if (!host) {
-    console.warn('[boot] DATABRICKS_HOST not set — skipping MLflow experiment bootstrap.');
+    console.warn('[boot] DATABRICKS_HOST not set, skipping MLflow experiment bootstrap.');
     return null;
   }
   try {
     const id = await ensureMlflowExperiment(host, experimentPath);
-    console.log(`[boot +${ms()}] MLflow experiment resolved (id=${id}) — traces will land at ${experimentPath}`);
+    console.log(`[boot +${ms()}] MLflow experiment resolved (id=${id}), traces will land at ${experimentPath}`);
     return id;
   } catch (e) {
     console.warn(
-      `[boot] MLflow experiment bootstrap failed for ${experimentPath} — "View trace" link will show "Trace pending…":`,
+      `[boot] MLflow experiment bootstrap failed for ${experimentPath}, "View trace" link will show "Trace pending…":`,
       (e as Error).message,
     );
     return null;
@@ -606,7 +606,7 @@ migrationsReady = (async () => {
     }
     migrationsDone = true;
   } catch (e) {
-    // Real bug — the LLM customizing the template needs to act on this.
+    // Real bug, the LLM customizing the template needs to act on this.
     // The gate middleware reads `migrationsFailure` and returns it to the
     // browser so the user sees the failure inline, not just in the terminal.
     migrationsFailure = e instanceof Error ? e : new Error(String(e));
@@ -614,23 +614,23 @@ migrationsReady = (async () => {
     throw migrationsFailure;
   }
 })();
-// Swallow the rejection at the top level — the gate handles it. Without
+// Swallow the rejection at the top level, the gate handles it. Without
 // this, the promise rejection logs a second time via unhandledRejection.
 migrationsReady.catch(() => {});
 
 // Fire-and-forget: MLflow setup trails migrations but nothing awaits it.
 void (async () => {
-  // Wait for migrations to complete (or fail) before doing MLflow setup —
+  // Wait for migrations to complete (or fail) before doing MLflow setup, 
   // MLflow doesn't depend on the DB, but ordering keeps the boot log readable.
   await migrationsReady.catch(() => {/* gate already surfaced this */});
-  // Now safe to enable tracing — sync queries are done.
+  // Now safe to enable tracing, sync queries are done.
   agentExperimentId = await mlflowIdPromise;
   if (agentExperimentId) {
     // Make the mlflow-tracing exporter use the SAME auth as the app's working
     // client. `mlflow.init({trackingUri:'databricks'})` builds its own bundled
     // @databricks/sdk-experimental Config, which resolves the DEFAULT
     // ~/.databrickscfg and IGNORES the DATABRICKS_CONFIG_FILE that appkit's
-    // client is wired to — so it gets no token and every trace upload throws
+    // client is wired to, so it gets no token and every trace upload throws
     // "cannot configure default credentials". `init` accepts explicit `host` +
     // `databricksToken` overrides, so we pass the bearer the app client already
     // resolves (project token in preview, SP/OBO in deploy). We read the token
@@ -647,7 +647,7 @@ void (async () => {
       mlflowHost = (client.config as { host?: string }).host
         ?? process.env.DATABRICKS_HOST;
     } catch (e) {
-      console.warn('[boot] could not resolve MLflow exporter auth from the app client — trace upload may fail:', (e as Error).message);
+      console.warn('[boot] could not resolve MLflow exporter auth from the app client, trace upload may fail:', (e as Error).message);
     }
 
     mlflow.init({
@@ -665,8 +665,8 @@ void (async () => {
     // mlflow-tracing's exporter logs "No trace ID found for span
     // lakebase.query. Skipping." once per query.
     //
-    // This is intentional behavior — those queries don't belong in an
-    // agent trace — but it produces log noise on every chat-stream
+    // This is intentional behavior, those queries don't belong in an
+    // agent trace, but it produces log noise on every chat-stream
     // request (~3 queries before the agent runs). Inside an agent turn,
     // queries DO get adopted via withSpan (see chat-stream/agent-stream.ts).
     const origWarn = console.warn.bind(console);

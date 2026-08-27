@@ -3,7 +3,7 @@
   //
   // ${VAR} / ${VAR:default} placeholders are substituted against process.env
   // BEFORE JSON parsing. So catalog/schema/resource-IDs live in env (one
-  // source of truth), NOT as literals here — set them in `.env` (local dev +
+  // source of truth), NOT as literals here, set them in `.env` (local dev +
   // preview) or via the DAB (deployed; finalize_app.sh writes app.yaml's env).
   //   - `${VAR}`           → empty string if unset
   //   - `${VAR:default}`   → `default` if unset
@@ -14,20 +14,22 @@
   // CUSTOMIZE per demo: branding, assistantScript, and data.tables names
   // below. Everything else is env-driven and shouldn't need editing.
 
-  // ─ Agent backend: set ONE (via env). masEndpointName → ask_mas tool.
-  //   genieSpaceId → swap to askGenieTool in server/agent/<name>.ts makeTools.
-  //   Both empty → no data tool → agent can't answer "why" questions.
-  //   Template ships with MAS; for a Genie-only demo set GENIE_SPACE_ID, leave
-  //   MAS_ENDPOINT_NAME empty, and swap ask_mas → askGenieTool in refundops.ts
-  //   makeTools. For both: register both with distinct names + tell the model
-  //   in instructions when to prefer each.
+  // ─ Agent investigation backend (ask_data): set ONE (via env). The ask_data
+  //   tool in server/agent/plantfloor.ts is config-driven, it delegates to the
+  //   MAS endpoint when masEndpointName is set, else the Genie space when
+  //   genieSpaceId is set. Both empty → no ask_data tool → the agent can't
+  //   answer "why is LINE-04 trending to a stop?". For the Volta demo, set
+  //   GENIE_SPACE_ID to the "Volta Plant Floor" Genie space (see 04-ai-bi.md).
   "masEndpointName": "${MAS_ENDPOINT_NAME:}",
   "genieSpaceId":    "${GENIE_SPACE_ID:}",
 
-  // Agent LLM. Needs the Responses API (openai/v1/responses). databricks-gpt-5-4
-  // is the baseline; a newer GPT endpoint with /responses enabled works too.
-  // Non-Responses models (Claude etc.) 400 BAD_REQUEST.
-  "agentModel": "databricks-gpt-5-4",
+  // Agent LLM, routed through the team's Unity AI Gateway (Build 3) so the
+  // spend cap, guardrails, and per-line inference logging apply. This is the
+  // gateway's 3-part model-service name (catalog.schema.service), NOT a raw
+  // system.ai.* endpoint, a raw passthrough would be UNGOVERNED. The service
+  // advertises openai/v1/responses, so the Responses-API agent is unchanged
+  // apart from the base URL (see server/agent/plantfloor.ts configureAgentsSdk).
+  "agentModel": "predictive_maintainers_catalog.vinod.volta_gateway",
 
   // MLflow trace path. Empty → chat shows "Trace pending…". Auto-created
   // at boot via lib/mlflow.ts.
@@ -45,11 +47,11 @@
   "kaEndpointName":    "${KA_ENDPOINT_NAME:}",
   "lakebaseProjectId": "${LAKEBASE_PROJECT_ID:}",
   "appUrl":            "${APP_URL:}",
-  "mlModelName":       "${DEMO_CATALOG}.${DEMO_SCHEMA}.customer_premium_classifier",
+  "mlModelName":       "${DEMO_CATALOG}.${DEMO_SCHEMA}.failure_recommender",
   "pdfVolumePath":     "/Volumes/${DEMO_CATALOG}/${DEMO_SCHEMA}/manufacturing_reports",
 
   // Delta source for boot-time Lakebase mirror (server/db/sync.ts). catalog +
-  // schema come from env; the table NAMES are domain-specific — rename to your
+  // schema come from env; the table NAMES are domain-specific, rename to your
   // demo's gold/silver tables (keep client/src/shared/types.ts + Drizzle
   // schema in server/db/schema.ts in sync). maintenanceRecommendations empty → skip
   // the ML-recommendations sync.
@@ -81,7 +83,7 @@
       "triggerAfter": ["failure", "risk", "part", "action"]
     },
     {
-      "prompt": "Yes — pull the line now.",
+      "prompt": "Yes, pull the line now.",
       "triggerAfter": ["pull", "ranked", "recommended"]
     }
   ]
