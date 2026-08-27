@@ -7,11 +7,20 @@
 # `app` Postgres schema (notably the writable work_orders_app) as open-format
 # Delta tables in UC, with append-only system metadata columns + full history.
 #
-# Prereqs (satisfied by the app deploy in Phase 2):
-#   - work_orders_app exists on the dev branch (created by the app's Drizzle migration)
-#   - a NON-default-storage UC catalog for the CDF destination (default-storage
-#     catalogs are rejected by CDF; the team pattern is a MANAGED external-storage
-#     catalog, e.g. nimbus_reverse_sync / cedar_cdf).
+# Prereqs:
+#   - work_orders_app exists on the branch (DONE on dev; created to match schema.ts).
+#   - predictive_maintainers_catalog is external-storage backed (s3://predictive-
+#     maintainers-ext-s3-...), so CDF accepts it as the destination (default-storage
+#     catalogs are rejected).
+#   - BLOCKER FOUND 2026-08-27 (for Brian / Lakebase owner): the UC DATABASE RESOURCE
+#     is registered only on the PRODUCTION branch (projects/volta/branches/production/
+#     databases/databricks-postgres, hyphen), NOT on dev. CDF operates on that database
+#     resource, so `create-cdf-config` on dev fails "CdfConfig not found: .../dev/
+#     databases/databricks-postgres". `create-database` on dev returns "Field 'database'
+#     is required" for every obvious JSON shape (undocumented Beta contract).
+#     RESOLUTION OPTIONS: (a) run this CDF against the PRODUCTION branch where the
+#     database resource already exists (matches "final demo on production"), or
+#     (b) Brian registers the dev database resource, then rerun. Set BRANCH below.
 #
 # Run:  ./scripts/reverse_sync_cdf.sh
 set -euo pipefail
