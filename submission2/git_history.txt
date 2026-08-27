@@ -1,0 +1,9 @@
+* bf62e49 (HEAD -> build/volta-app) feat(lakebase): Phase 0 dev data layer + Build 1 evidence
+| * c6bf9b0 (wt/client) Retheme client from returns/refund-ops to Volta Industrial predictive maintenance.
+|/  
+| * c50b3a6 (wt/plantfloor) Add comprehensive README for PlantFloor3D module
+| * 274ec71 Add integration guide for PlantFloor3D component
+| * 9b5e925 Build 3D plant-floor visualization component for Volta Industrial
+|/  
+* 2023443 (wt/server, main) feat(aibi): add Volta Plant Floor Genie space + dashboard, wire into resources.json
+* 32fff1e (origin/main, origin/HEAD) Initial commit: Volta Industrial demo artifacts

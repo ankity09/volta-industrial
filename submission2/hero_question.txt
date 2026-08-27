@@ -1,0 +1,16 @@
+HERO QUESTION (Build 2)
+"LINE-04 is trending toward a stop. Pull it now or run it to the end of the shift?"
+
+Sam Ortiz, VP Manufacturing Operations, Volta Industrial (PLANT-03, Ohio).
+
+DECISION CHAIN (record IDs link the exports):
+1. VISUALIZE  -> app.line_status row  line_id = LINE-0004  (risk_band=critical, failure_risk_score=0.87,
+   part_local=false, downtime_exposure_usd) surfaces LINE-04 in the ranked at-risk view (view_result.json).
+2. ASSIST     -> app.maintenance_recommendations  line_id = LINE-0004  recommended_action = pull_now,
+   predicted_downtime_cost_avoided_usd = 76560, action_ranking shows run_to_shift_end net -68560,
+   expedite barely break-even (part non-local). Explanation + what-if in assist_log.jsonl; drafted memo in drafted_sample.md.
+3. ACT        -> app.work_orders_app  id = e95eb569-df8f-4a48-9e06-2f3ad0ed23e8  line_id = LINE-0004  action_type = pull_now,
+   status proposed -> approved, approved_by = <plant lead identity>, audit_trail appended.
+   The next read of line_status/open_atrisk reflects the committed decision (closed loop).
+
+The linked record id across all three: line_id = LINE-0004 (hero), work_orders_app.id = e95eb569-df8f-4a48-9e06-2f3ad0ed23e8 (the committed action).
