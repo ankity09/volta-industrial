@@ -1,9 +1,22 @@
-* bf62e49 (HEAD -> build/volta-app) feat(lakebase): Phase 0 dev data layer + Build 1 evidence
+* 839d0bf (HEAD -> build/volta-app) build: client builds; package.json deps completed (tw-animate-css, tailwindcss postcss/typography); fix plantfloor import path
+* 010d968 (origin/build/volta-app) fix(schema): align work_orders_app to Brian's canonical Lakebase table
+* 526ac44 merge+integrate: 3 worktrees into build/volta-app
+*   11be6fc merge(client): retheme returns->Volta + PlantFloor3D + closed-loop refetch
+|\  
 | * c6bf9b0 (wt/client) Retheme client from returns/refund-ops to Volta Industrial predictive maintenance.
+* |   a645b2a merge(plantfloor): 3D plant-floor Visualize component
+|\ \  
+| * | c50b3a6 (wt/plantfloor) Add comprehensive README for PlantFloor3D module
+| * | 274ec71 Add integration guide for PlantFloor3D component
+| * | 9b5e925 Build 3D plant-floor visualization component for Volta Industrial
+| |/  
+* |   3e10c29 merge(server): agent tools + writeback + UAIG wiring
+|\ \  
+| * | 5a8b8ea (wt/server) feat(server): Volta agent tools + writeback + UAIG gateway wiring
+| |/  
+* | 2b79d77 docs(build1): reverse-sync CDF blocker documented for Brian (dev DB resource unregistered)
+* | d30ada9 feat(build2): submission2 evidence from live Lakebase (5/7)
+* | bf62e49 feat(lakebase): Phase 0 dev data layer + Build 1 evidence
 |/  
-| * c50b3a6 (wt/plantfloor) Add comprehensive README for PlantFloor3D module
-| * 274ec71 Add integration guide for PlantFloor3D component
-| * 9b5e925 Build 3D plant-floor visualization component for Volta Industrial
-|/  
-* 2023443 (wt/server, main) feat(aibi): add Volta Plant Floor Genie space + dashboard, wire into resources.json
+* 2023443 (main) feat(aibi): add Volta Plant Floor Genie space + dashboard, wire into resources.json
 * 32fff1e (origin/main, origin/HEAD) Initial commit: Volta Industrial demo artifacts

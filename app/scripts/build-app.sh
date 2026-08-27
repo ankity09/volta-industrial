@@ -26,7 +26,7 @@ LOCKFILE="$APP_DIR/package-lock.json"
 cd "$APP_DIR"
 
 echo "[build-app] installing npm dependencies (incl. dev)…"
-npm install --include=dev
+npm install --include=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund
 
 # Generate the Drizzle SQL migrations from schema.ts. This does NOT happen via
 # `build:source` (npm only auto-runs `prebuild` before a script named exactly
