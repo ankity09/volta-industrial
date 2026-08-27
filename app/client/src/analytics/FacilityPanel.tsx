@@ -1,12 +1,13 @@
 /**
- * Facility breakdown + batch drill-down — read-only pattern-spotting view.
+ * Plant-floor failure risk breakdown with at-risk lines drill-down.
+ * Read-only pattern-spotting view for predictive maintenance.
  *
- * Answers: "Where are the defects coming from?"
- *   - Horizontal bar per facility (width = return count).
- *   - Click a bar OR pick from the dropdown → select that facility.
- *   - Below: the top batches at that facility. Each batch has an
- *     "Open in Operations →" link that jumps to the returns queue
- *     pre-filtered on that lot.
+ * Answers: "Where is the failure risk concentrated?"
+ *   - Horizontal bar per plant (width = downtime_exposure_usd or critical_lines).
+ *   - Click a bar OR pick from the dropdown to select that plant.
+ *   - Below: the top at-risk lines at that plant. Each line has an
+ *     "Open in Operations ->" link that jumps to the operations view
+ *     pre-filtered on that line_id.
  *
  * Data comes from Lakebase (not the warehouse) so this stays fast and
  * reflects agent actions live.
@@ -15,35 +16,35 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowUpRight, Factory } from 'lucide-react';
 import { Link } from 'react-router';
 import { Skeleton } from '@databricks/appkit-ui/react';
-import { fetchFacilityLots, fetchFacilitySummary } from '@/lib/returns';
-import type { FacilityLotRow, FacilityRow } from '@/shared/types';
+import { fetchPlantMap, fetchLines } from '@/lib/lines';
+import type { PlantBucket, LineStatus } from '@/shared/types';
 import { dataMutated } from '@/lib/events';
 import { usePulseOnChange } from '@/lib/usePulseOnChange';
 
 export function FacilityPanel() {
-  const [facilities, setFacilities] = useState<FacilityRow[]>([]);
-  const [loadingFacilities, setLoadingFacilities] = useState(true);
+  const [plants, setPlants] = useState<PlantBucket[]>([]);
+  const [loadingPlants, setLoadingPlants] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
-  const [lots, setLots] = useState<FacilityLotRow[]>([]);
-  const [loadingLots, setLoadingLots] = useState(false);
+  const [lines, setLines] = useState<LineStatus[]>([]);
+  const [loadingLines, setLoadingLines] = useState(false);
 
-  // Reload facilities on mount + every agent write. Cancellation flag
+  // Reload plants on mount and every agent write. Cancellation flag
   // covers both paths so a stale response can't overwrite fresh data.
   useEffect(() => {
     let cancelled = false;
     function reload() {
-      fetchFacilitySummary()
+      fetchPlantMap()
         .then((rows) => {
           if (cancelled) return;
-          setFacilities(rows);
-          setSelected((curr) => curr ?? rows[0]?.facility ?? null);
+          setPlants(rows);
+          setSelected((curr) => curr ?? rows[0]?.plant_id ?? null);
         })
         .catch((e) => {
           if (cancelled) return;
-          console.error('[facility] reload failed', e);
+          console.error('[plant-map] reload failed', e);
         })
         .finally(() => {
-          if (!cancelled) setLoadingFacilities(false);
+          if (!cancelled) setLoadingPlants(false);
         });
     }
     reload();
@@ -54,24 +55,30 @@ export function FacilityPanel() {
     };
   }, []);
 
-  // Reload the selected facility's lots on selection change AND on agent
-  // writes. The dataMutated refetch is a silent background swap — we only
-  // flip `loadingLots` for the user-driven initial fetch (selection change),
+  // Reload the selected plant's at-risk lines on selection change AND on agent
+  // writes. The dataMutated refetch is a silent background swap. We only
+  // flip `loadingLines` for the user-driven initial fetch (selection change),
   // never on every agent write.
   useEffect(() => {
     if (!selected) return;
     let cancelled = false;
-    setLoadingLots(true);
+    setLoadingLines(true);
     function reload() {
-      fetchFacilityLots(selected!, 5)
+      fetchLines({ plant: selected })
         .then((rows) => {
-          if (!cancelled) setLots(rows);
+          if (!cancelled) {
+            const filtered = rows
+              .filter((line) => ['critical', 'elevated', 'watch'].includes(line.riskBand))
+              .sort((a, b) => b.downtimeExposureUsd - a.downtimeExposureUsd)
+              .slice(0, 8);
+            setLines(filtered);
+          }
         })
         .catch(() => {
-          if (!cancelled) setLots([]);
+          if (!cancelled) setLines([]);
         })
         .finally(() => {
-          if (!cancelled) setLoadingLots(false);
+          if (!cancelled) setLoadingLines(false);
         });
     }
     reload();
@@ -83,27 +90,26 @@ export function FacilityPanel() {
   }, [selected]);
 
   const max = useMemo(
-    () => Math.max(1, ...facilities.map((f) => f.return_count)),
-    [facilities],
+    () => Math.max(1, ...plants.map((p) => p.downtime_exposure_usd)),
+    [plants],
   );
 
   // Empty after a successful fetch — there's just no data. Hide quietly
-  // (this is the "no facilities have returns" case, e.g. fresh reset).
-  if (!loadingFacilities && facilities.length === 0) return null;
+  // (this is the "no plants have at-risk lines" case, e.g. healthy fleet).
+  if (!loadingPlants && plants.length === 0) return null;
 
   return (
     <section className="space-y-4">
       <div className="flex items-baseline justify-between gap-4">
         <div>
           <h2 className="display text-xl font-semibold tracking-tight">
-            Where are the defects coming from?
+            Where is the failure risk concentrated?
           </h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Returns by manufacturing facility. Pick one to drill into its
-            worst production batches.
+            At-risk lines by plant. Pick a plant to drill into its highest-exposure lines.
           </p>
         </div>
-        {loadingFacilities ? (
+        {loadingPlants ? (
           <Skeleton className="h-8 w-44 shrink-0 bg-muted" />
         ) : (
           <select
@@ -111,9 +117,9 @@ export function FacilityPanel() {
             onChange={(e) => setSelected(e.target.value)}
             className="rounded-md border border-border bg-card px-3 py-1.5 text-sm outline-none focus:border-foreground/40"
           >
-            {facilities.map((f) => (
-              <option key={f.facility} value={f.facility}>
-                {f.facility} · {f.return_count.toLocaleString()}
+            {plants.map((p) => (
+              <option key={p.plant_id} value={p.plant_id}>
+                {p.plant_id} . {p.critical_lines} critical
               </option>
             ))}
           </select>
@@ -121,62 +127,62 @@ export function FacilityPanel() {
       </div>
 
       <div className="rounded-xl border border-border bg-card p-5 space-y-2.5">
-        {loadingFacilities ? (
+        {loadingPlants ? (
           <div className="space-y-3 py-1">
             {['100%', '85%', '70%', '55%'].map((w) => (
               <Skeleton key={w} className="h-5 bg-muted" style={{ width: w }} />
             ))}
           </div>
         ) : (
-          facilities.map((f) => (
-            <FacilityBar
-              key={f.facility}
-              row={f}
+          plants.map((p) => (
+            <PlantBar
+              key={p.plant_id}
+              row={p}
               max={max}
-              isSelected={f.facility === selected}
-              onSelect={() => setSelected(f.facility)}
+              isSelected={p.plant_id === selected}
+              onSelect={() => setSelected(p.plant_id)}
             />
           ))
         )}
       </div>
 
-      {(loadingFacilities || selected) && (
+      {(loadingPlants || selected) && (
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-2">
-            Top batches{selected ? ` · ${selected}` : ''}
+            At-risk lines{selected ? ` - ${selected}` : ''}
           </div>
           <div className="rounded-xl border border-border bg-card overflow-hidden">
-            {(loadingFacilities || loadingLots) && (
+            {(loadingPlants || loadingLines) && (
               <div className="p-4 space-y-3">
                 {['100%', '100%', '75%'].map((w, i) => (
                   <Skeleton key={i} className="h-4 bg-muted" style={{ width: w }} />
                 ))}
               </div>
             )}
-            {!loadingFacilities && !loadingLots && lots.length === 0 && (
+            {!loadingPlants && !loadingLines && lines.length === 0 && (
               <div className="px-4 py-3 text-sm text-muted-foreground">
-                No batches with returns at this facility.
+                No at-risk lines at this plant.
               </div>
             )}
-            {!loadingFacilities && !loadingLots && lots.map((lot) => (
+            {!loadingPlants && !loadingLines && lines.map((line) => (
               <div
-                key={lot.lot_id}
+                key={line.lineId}
                 className="px-4 py-3 flex items-center gap-4 border-t first:border-t-0 border-border"
               >
                 <div className="font-mono text-sm w-40 shrink-0">
-                  {lot.lot_id}
+                  {line.lineId}
                 </div>
                 <div className="flex-1 min-w-0 text-sm text-muted-foreground truncate">
-                  {lot.product_names ?? `${lot.product_count} products`}
+                  {line.machineType}
                 </div>
                 <div className="text-sm tabular-nums w-28 text-right">
-                  {lot.return_count.toLocaleString()} returns
+                  {(line.failureRiskScore * 100).toFixed(0)}% risk
                 </div>
                 <div className="w-24 text-right text-sm text-muted-foreground tabular-nums">
-                  ${Number(lot.total_refund_usd).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  ${Number(line.downtimeExposureUsd).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </div>
                 <Link
-                  to={`/operations?lot=${encodeURIComponent(lot.lot_id)}`}
+                  to={`/operations?line=${encodeURIComponent(line.lineId)}`}
                   className="shrink-0 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                 >
                   Open in Operations
@@ -191,22 +197,21 @@ export function FacilityPanel() {
   );
 }
 
-function FacilityBar({
-  row: f,
+function PlantBar({
+  row: p,
   max,
   isSelected,
   onSelect,
 }: {
-  row: FacilityRow;
+  row: PlantBucket;
   max: number;
   isSelected: boolean;
   onSelect: () => void;
 }) {
-  // Pulse the bar's row when its return_count moves between refetches
-  // (e.g. the agent's bulk approval flipped pending rows out of this
-  // facility's count). Same hook every Operations surface uses.
-  const pulse = usePulseOnChange(f.return_count);
-  const pct = (f.return_count / max) * 100;
+  // Pulse the bar's row when its downtime_exposure_usd moves between refetches.
+  // Same hook every Operations surface uses.
+  const pulse = usePulseOnChange(p.downtime_exposure_usd);
+  const pct = (p.downtime_exposure_usd / max) * 100;
   return (
     <button
       onClick={onSelect}
@@ -228,7 +233,7 @@ function FacilityBar({
                 : 'text-foreground/80 group-hover:text-foreground'
             }
           >
-            {f.facility}
+            {p.plant_id}
           </span>
         </div>
         <div className="flex-1 h-7 rounded-md bg-muted relative overflow-hidden">
@@ -242,11 +247,11 @@ function FacilityBar({
             }}
           />
           <div className="absolute inset-0 flex items-center justify-end pr-2.5 text-xs font-medium text-foreground">
-            {f.return_count.toLocaleString()}
+            {p.critical_lines} critical
           </div>
         </div>
         <div className="w-28 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
-          ${Number(f.total_refund_usd).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          ${Number(p.downtime_exposure_usd).toLocaleString(undefined, { maximumFractionDigits: 0 })}
         </div>
       </div>
     </button>
