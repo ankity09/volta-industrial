@@ -28,7 +28,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useSession, type ScriptStep } from '@/lib/api';
-import { fetchActivity } from '@/lib/returns';
+import { fetchActivity } from '@/lib/lines';
 import type { ActivityEvent } from '@/shared/types';
 import { dataMutated } from '@/lib/events';
 import { dockController } from '@/chat/dockController';
@@ -42,27 +42,27 @@ import { AgentLoopFlow } from '@/architecture/AgentLoopFlow';
 // ---------------------------------------------------------------------------
 
 const HERO = {
-  name: 'Claire Dubois',
-  role: 'VP of Operations',
+  name: 'Sam Ortiz',
+  role: 'VP Manufacturing Operations',
 };
 
 const STORY = {
-  headline: "Returns are running 3x normal — and we don't know why.",
+  headline: 'Lines are trending toward a stop.',
   situation:
-    "Three weeks ago returns jumped from ~$60K/week to $180K, driven by three skincare SKUs with a 30% return rate. They're still elevated at ~$80K. Revenue looks fine, orders look fine — but the refunds line is eating the quarter.",
-  goal: 'Find the root cause, confirm the blast radius, and decide on a recall or field fix.',
+    'A 3-week high-utilization run wore ~90 production lines toward failure. Rising vibration, climbing temperature, and open work orders. About $3.3M downtime at risk across 8 plants, ~150 open corrective work orders. Each unplanned stop costs $22K per hour.',
+  goal: 'Find the lines heading for a stop, rank the maintenance action that avoids the most downtime cost, and approve it in one conversation.',
 };
 
 const STARTER_QUESTIONS = [
-  'Why do I have so many returns?',
-  'Was there an incident for that lot?',
-  'Which of the affected customers are premium (CS-tagged or model-found)?',
+  'Which lines are trending toward a stop?',
+  'Why is LINE-04 heading for a breakdown?',
+  'Should we pull LINE-04 now or run it to the end of the shift?',
 ];
 
 // The featured action's copy is inlined in the JSX below — the section is just
 // HTML, edit it freely. The prompt text is the single thing the agent runs.
 const FEATURED_ACTION_PROMPT =
-  "Something is off with our returns right now. Find the worst production lot, then use the premium classifier to split the affected customers — CS-tagged premium PLUS the hidden premiums the model surfaces — from the standard cohort. Draft two apology email templates: a 20% personal apology for premium, a 5% goodwill for standard. Show me both, including the count of CS-tagged vs model-found premiums, before sending. Wait for my approval. Once I say go, email everyone with their tier's coupon and approve all the refunds.";
+  'Recommend an action for LINE-04 — rank pull now vs run to shift end vs expedite parts and run. Show me the downtime cost each action avoids, the cost of the action itself, and the net value. Explain which one wins and why. Draft the work order. Wait for my approval.';
 
 export function HomeView() {
   const { config, configError, retry: retrySession } = useSession();
@@ -169,38 +169,37 @@ export function HomeView() {
             className="rounded-2xl p-7 relative overflow-hidden"
             style={{
               background:
-                'linear-gradient(135deg, color-mix(in oklch, var(--primary) 96%, white) 0%, color-mix(in oklch, var(--primary) 88%, var(--accent) 12%) 100%)',
-              color: 'var(--primary-foreground)',
+                'linear-gradient(135deg, #E5484D 0%, #FFB020 100%)',
+              color: 'white',
             }}
           >
             <div
               className="absolute -right-16 -top-16 size-52 rounded-full opacity-20"
-              style={{ background: 'var(--accent)' }}
+              style={{ background: '#0A0F1C' }}
             />
             <div className="relative">
-              <div className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] opacity-80 mb-3">
+              <div className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] opacity-90 mb-3">
                 <Zap className="size-3.5" />
-                Let the assistant handle it
+                Let the assistant rank it
               </div>
               <h3 className="display text-2xl font-semibold mb-2 leading-tight">
-                Handle the bad-lot returns — tier the offer by premium status
+                Rank the maintenance action for LINE-04 — pull now vs run to shift end vs expedite
               </h3>
-              <p className="hidden sm:block text-sm opacity-85 leading-relaxed mb-5 max-w-2xl">
-                The assistant traces the spike to one lot, then asks the
-                premium classifier which of the affected customers your CS
-                team has tagged AND which hidden premiums the model has
-                surfaced (untagged customers who look just like the tagged
-                ones). It drafts two apology emails (20% personal apology
-                for premium, 5% goodwill for the rest), and waits for your
-                approval before anything goes out.
+              <p className="hidden sm:block text-sm opacity-90 leading-relaxed mb-5 max-w-2xl">
+                The assistant investigates LINE-04's failure risk trend via
+                Genie, reads the live Lakebase status and parts context, then
+                ranks the three plays against the downtime cost each would
+                avoid. It explains which action wins and why. It drafts the
+                work order and stops for your approval. Once you say yes, it
+                writes to Lakebase and the KPIs tick live.
               </p>
-              <p className="sm:hidden text-sm opacity-85 leading-relaxed mb-5">
-                Trace the spike, tier the offer (premium vs. rest), draft
-                the apology emails — approve before anything goes out.
+              <p className="sm:hidden text-sm opacity-90 leading-relaxed mb-5">
+                Investigate the line's trend, rank the actions by downtime
+                avoided, draft the work order — approve before executing.
               </p>
               <button
                 onClick={() => dockController.newAndSend(FEATURED_ACTION_PROMPT)}
-                className="inline-flex items-center gap-2 rounded-full bg-background text-foreground px-5 py-2 text-sm font-medium hover:opacity-90 transition-opacity"
+                className="inline-flex items-center gap-2 rounded-full bg-white text-foreground px-5 py-2 text-sm font-medium hover:opacity-90 transition-opacity"
               >
                 Run this <ArrowRight className="size-4" />
               </button>
@@ -216,7 +215,7 @@ export function HomeView() {
             </div>
             <ActivityFeed
               events={activity}
-              onJumpToReturn={(id) => navigate(`/operations?return=${id}`)}
+              onJumpToLine={(id) => navigate(`/operations?line=${id}`)}
             />
           </section>
         )}
@@ -251,15 +250,15 @@ function JourneyDiagram({
   const steps = [
     {
       icon: <Eye className="size-5" />,
-      role: `${heroName} operates`,
-      quote: '"Returns are everywhere — my dashboard lit up."',
+      role: `${heroName} sees it`,
+      quote: '"Lines are trending to a stop."',
       highlight: false,
       onClick: () => navigate('/operations'),
     },
     {
       icon: <MessageCircleQuestion className="size-5" />,
       role: 'She asks',
-      quote: '"Why do I have so many returns?"',
+      quote: '"Why is LINE-04 heading for a breakdown?"',
       highlight: false,
       onClick: () =>
         step0
@@ -269,18 +268,18 @@ function JourneyDiagram({
     {
       icon: <Brain className="size-5" />,
       role: 'AI investigates',
-      quote: '"A bad production batch at one facility. 3 SKUs. Quality issue on the line."',
+      quote: '"Vibration climbing 3 weeks. Part not local. $76K downtime if unplanned."',
       highlight: true,
       onClick: () => dockController.open(),
     },
     {
       icon: <Wrench className="size-5" />,
-      role: 'AI takes action',
-      quote: '"Found the hidden premiums. Drafted both emails. Sent."',
+      role: 'AI ranks action',
+      quote: '"Pull now avoids $76K. Run to shift end risks the full stop. Expedite barely breaks even."',
       highlight: true,
       onClick: () => {
-        // Fire step-1 (accept + draft). If user is mid-chain the dock will
-        // still open; they can then click "Yes — send it" from the chip.
+        // Fire step-1 (rank + draft). If user is mid-chain the dock will
+        // still open; they can then click "Yes — approve" from the chip.
         if (step1) dockController.openAndSend(step1.prompt);
         else if (step2) dockController.openAndSend(step2.prompt);
         else dockController.open();
@@ -405,10 +404,10 @@ function StepText({ step, compact = false }: { step: JourneyStep; compact?: bool
 
 function ActivityFeed({
   events,
-  onJumpToReturn,
+  onJumpToLine,
 }: {
   events: ActivityEvent[];
-  onJumpToReturn: (returnId: string) => void;
+  onJumpToLine: (lineId: string) => void;
 }) {
   return (
     <ul className="rounded-xl border border-border bg-card divide-y divide-border overflow-hidden">
@@ -419,7 +418,7 @@ function ActivityFeed({
         >
           <ActivityIcon kind={e.kind} />
           <div className="flex-1 min-w-0">
-            <ActivityBody event={e} onJumpToReturn={onJumpToReturn} />
+            <ActivityBody event={e} onJumpToLine={onJumpToLine} />
           </div>
           <div className="text-xs text-muted-foreground shrink-0">
             {relativeTime(e.at)}
@@ -431,11 +430,11 @@ function ActivityFeed({
 }
 
 function ActivityIcon({ kind }: { kind: ActivityEvent['kind'] }) {
-  const Icon = kind === 'email' ? Mail : CheckCircle2;
+  const Icon = kind === 'work_order' ? CheckCircle2 : AlertTriangle;
   const bg =
-    kind === 'email'
-      ? 'bg-[var(--info-subtle)] text-[var(--info-subtle-foreground)]'
-      : 'bg-[var(--success-subtle)] text-[var(--success-subtle-foreground)]';
+    kind === 'work_order'
+      ? 'bg-[var(--success-subtle)] text-[var(--success-subtle-foreground)]'
+      : 'bg-[var(--warning-subtle)] text-[var(--warning-subtle-foreground)]';
   return (
     <div
       className={`size-7 rounded-full flex items-center justify-center shrink-0 ${bg}`}
@@ -447,24 +446,26 @@ function ActivityIcon({ kind }: { kind: ActivityEvent['kind'] }) {
 
 function ActivityBody({
   event,
-  onJumpToReturn,
+  onJumpToLine,
 }: {
   event: ActivityEvent;
-  onJumpToReturn: (returnId: string) => void;
+  onJumpToLine: (lineId: string) => void;
 }) {
-  if (event.kind === 'email') {
+  if (event.kind === 'work_order') {
     return (
       <>
         <div className="text-foreground truncate">
-          <span className="font-medium">Email</span> to{' '}
-          <span className="text-muted-foreground">{event.to ?? '—'}</span>:{' '}
-          <span className="text-muted-foreground">"{event.subject}"</span>
+          <span className="font-medium capitalize">{event.action.replace(/_/g, ' ')}</span>{' '}
+          on <span className="font-mono text-xs">{event.line_id}</span>:{' '}
+          <span className="text-muted-foreground">
+            ${(event.downtime_avoided_usd / 1000).toFixed(1)}K downtime avoided
+          </span>
         </div>
         <button
-          onClick={() => onJumpToReturn(event.return_id)}
+          onClick={() => onJumpToLine(event.line_id)}
           className="mt-0.5 text-xs text-muted-foreground hover:text-foreground"
         >
-          View return →
+          View line →
         </button>
       </>
     );
@@ -479,10 +480,10 @@ function ActivityBody({
         <span className="text-xs text-muted-foreground ml-2">by {event.by}</span>
       </div>
       <button
-        onClick={() => onJumpToReturn(event.return_id)}
+        onClick={() => onJumpToLine(event.line_id)}
         className="mt-0.5 text-xs text-muted-foreground hover:text-foreground"
       >
-        View return →
+        View line →
       </button>
     </>
   );

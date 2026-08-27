@@ -1,39 +1,56 @@
 /**
- * Small pill-style badges reused across the Operations page + home activity
- * feed. If you add a new status or tier, update both the type union in
+ * Small pill-style badges reused across the Plant Floor page + home activity
+ * feed. If you add a new status or risk band, update both the type union in
  * shared/types.ts and the colour map here.
  */
-import type { ReturnStatus } from './types';
+import type { RiskBand, WorkOrderStatus } from './types';
 
-export function StatusBadge({ status }: { status: ReturnStatus }) {
-  const styles: Record<ReturnStatus, string> = {
-    pending: 'bg-muted text-foreground',
+export function RiskBandBadge({ band }: { band: RiskBand }) {
+  const styles: Record<RiskBand, string> = {
+    critical: 'bg-[#E5484D] text-white',
+    elevated: 'bg-[#FFB020] text-[#0A0F1C]',
+    watch: 'bg-[#3C6997] text-white',
+    healthy: 'bg-muted text-foreground',
+  };
+  return (
+    <span
+      className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${styles[band]}`}
+    >
+      {band}
+    </span>
+  );
+}
+
+export function ActionBadge({ action }: { action: string }) {
+  const styles: Record<string, string> = {
+    pull_now: 'bg-[#E5484D] text-white',
+    run_to_shift_end: 'bg-[#3C6997] text-white',
+    expedite_parts_and_run: 'bg-[#FFB020] text-[#0A0F1C]',
+  };
+  const cls = styles[action] ?? 'bg-muted text-muted-foreground';
+  const label = action
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>
+      {label}
+    </span>
+  );
+}
+
+export function WorkOrderStatusBadge({ status }: { status: WorkOrderStatus }) {
+  const styles: Record<WorkOrderStatus, string> = {
+    proposed: 'bg-muted text-foreground',
     approved: 'bg-[var(--success-subtle)] text-[var(--success-subtle-foreground)]',
-    rejected: 'bg-muted text-muted-foreground',
-    escalated: 'bg-[var(--warning-subtle)] text-[var(--warning-subtle-foreground)]',
+    executed: 'bg-[var(--success-subtle)] text-[var(--success-subtle-foreground)]',
+    overridden: 'bg-[var(--warning-subtle)] text-[var(--warning-subtle-foreground)]',
   };
   return (
     <span
       className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${styles[status]}`}
     >
       {status}
-    </span>
-  );
-}
-
-export function TierBadge({ tier }: { tier: string }) {
-  const styles: Record<string, string> = {
-    gold: 'bg-[var(--tier-gold)] text-[var(--tier-gold-foreground)]',
-    silver: 'bg-[var(--tier-silver)] text-[var(--tier-silver-foreground)]',
-    bronze: 'bg-[var(--tier-bronze)] text-[var(--tier-bronze-foreground)]',
-    platinum: 'bg-[var(--tier-platinum)] text-[var(--tier-platinum-foreground)]',
-  };
-  const cls = styles[tier.toLowerCase()] ?? 'bg-muted text-muted-foreground';
-  return (
-    <span
-      className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${cls}`}
-    >
-      {tier}
     </span>
   );
 }

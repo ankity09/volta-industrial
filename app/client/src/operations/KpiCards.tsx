@@ -1,42 +1,52 @@
 /**
- * Three KPI cards at the top of the Operations page: pending / approved /
- * escalated with counts + $ totals. Drives the "live update" demo moment —
- * click a decision and the numbers tick. When the agent's bulk write fires
- * `dataMutated`, each card's `count` is compared to the previous value and
- * only the cards that *moved* pulse a primary ring (see usePulseOnChange).
+ * Three KPI cards at the top of the Plant Floor page:
+ * Downtime Exposure, Open Work Orders, Critical Lines.
+ *
+ * Drives the "live update" demo moment — when the agent executes an action,
+ * the KPIs tick down. When `dataMutated` fires, each card's value is compared
+ * to the previous and cards that moved pulse a critical-red ring.
  */
-import { AlertTriangle, CheckCircle2, PackageOpen } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Zap } from 'lucide-react';
 import { usePulseOnChange } from '@/lib/usePulseOnChange';
-import type { ReturnsSummary, ReturnStatus } from '@/shared/types';
+import type { LinesSummary } from '@/shared/types';
 
-export function KpiCards({ summary }: { summary: ReturnsSummary[] }) {
-  const byStatus = new Map<ReturnStatus, ReturnsSummary>();
-  for (const s of summary) byStatus.set(s.status, s);
-  const pending = byStatus.get('pending');
-  const approved = byStatus.get('approved');
-  const escalated = byStatus.get('escalated');
+export function KpiCards({ summary }: { summary: LinesSummary[] }) {
+  let downtimeExposure = 0;
+  let openWoCount = 0;
+  let criticalCount = 0;
+
+  for (const s of summary) {
+    downtimeExposure += s.downtime_exposure_usd;
+    if (s.risk_band === 'critical') {
+      criticalCount += s.n;
+    }
+    if (s.risk_band === 'critical' || s.risk_band === 'elevated') {
+      openWoCount += s.n;
+    }
+  }
+
   return (
     <div className="grid grid-cols-3 gap-2 sm:gap-4">
       <Card
-        label="Pending"
-        count={pending?.n ?? 0}
-        value={pending?.total_usd ?? '0'}
-        icon={<PackageOpen className="size-4" />}
-        tone="neutral"
+        label="Downtime Exposure"
+        value={downtimeExposure}
+        unit="usd"
+        icon={<Zap className="size-4" />}
+        tone="critical"
       />
       <Card
-        label="Approved"
-        count={approved?.n ?? 0}
-        value={approved?.total_usd ?? '0'}
-        icon={<CheckCircle2 className="size-4" />}
-        tone="success"
-      />
-      <Card
-        label="Escalated to QA"
-        count={escalated?.n ?? 0}
-        value={escalated?.total_usd ?? '0'}
+        label="Open Work Orders"
+        value={openWoCount}
+        unit="count"
         icon={<AlertTriangle className="size-4" />}
-        tone="danger"
+        tone="elevated"
+      />
+      <Card
+        label="Critical Lines"
+        value={criticalCount}
+        unit="count"
+        icon={<CheckCircle2 className="size-4" />}
+        tone="neutral"
       />
     </div>
   );
@@ -44,35 +54,35 @@ export function KpiCards({ summary }: { summary: ReturnsSummary[] }) {
 
 function Card({
   label,
-  count,
   value,
+  unit,
   icon,
   tone,
 }: {
   label: string;
-  count: number;
-  value: string;
+  value: number;
+  unit: 'usd' | 'count';
   icon: React.ReactNode;
-  tone: 'neutral' | 'success' | 'danger';
+  tone: 'critical' | 'elevated' | 'neutral';
 }) {
-  const pulse = usePulseOnChange(count);
+  const pulse = usePulseOnChange(value);
   const toneClass =
-    tone === 'success'
-      ? 'text-[var(--success-subtle-foreground)]'
-      : tone === 'danger'
-        ? 'text-destructive'
-        : 'text-foreground';
-  // On phone the $ value stacks BELOW the count (3 cards in a row at 375px
-  // can't fit both inline). On sm+ they sit on one baseline like before.
-  // Phone $ uses a "compact" abbreviation ($674.9K) to keep the line short.
-  const valueNum = Number(value);
-  const compactDollar = new Intl.NumberFormat(undefined, {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(valueNum);
-  const fullDollar = valueNum.toLocaleString(undefined, {
-    maximumFractionDigits: 0,
-  });
+    tone === 'critical'
+      ? 'text-[#E5484D]'
+      : tone === 'elevated'
+        ? 'text-[#FFB020]'
+        : 'text-[#3C6997]';
+
+  const formattedValue =
+    unit === 'usd'
+      ? new Intl.NumberFormat(undefined, {
+          notation: 'compact',
+          maximumFractionDigits: 1,
+          style: 'currency',
+          currency: 'USD',
+        }).format(value)
+      : value.toLocaleString();
+
   return (
     <div
       className={`rounded-xl border border-border bg-card p-3 sm:p-5 transition-shadow ${
@@ -84,12 +94,8 @@ function Card({
         <span className="truncate">{label}</span>
       </div>
       <div className="mt-1.5 sm:mt-2 flex flex-col sm:flex-row sm:items-baseline gap-0 sm:gap-2">
-        <div className="display text-2xl sm:text-3xl font-semibold text-foreground">
-          {count.toLocaleString()}
-        </div>
-        <div className="text-xs sm:text-sm text-muted-foreground">
-          <span className="sm:hidden">${compactDollar}</span>
-          <span className="hidden sm:inline">· ${fullDollar}</span>
+        <div className="display text-2xl sm:text-3xl font-semibold text-foreground font-mono">
+          {formattedValue}
         </div>
       </div>
     </div>
