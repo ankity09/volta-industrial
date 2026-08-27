@@ -1,0 +1,17 @@
+DEVELOPMENT BRANCHES (off main) — Build 1
+
+Git branch:      build/volta-app   (cut from main; main stays the clean demo environment)
+Lakebase branch: projects/volta/branches/dev   (parent: production; production reserved for the final demo)
+
+Iteration on the dev branch (not just created):
+- Created Postgres role `ankit-yadav` (USER, DATABRICKS_SUPERUSER, LAKEBASE_OAUTH_V1) so the team member can build.
+- Created schema `app` on the dev branch.
+- Enabled Lakebase Search extensions in required order: vector, then lakebase_vector, then lakebase_text.
+- Synced the governed operational data from predictive_maintainers_catalog.volta gold tables into
+  read-only Postgres mirrors: app.line_status (258), app.open_atrisk (155),
+  app.maintenance_recommendations (155), app.parts (800).
+- Built a BM25 full-text search index (app.parts_bm25_idx, lakebase_bm25 AM) over parts(name, description).
+- Modeled a related operational schema (lines / at-risk / recommendations / parts / writable work_orders_app),
+  not a flat dump, with a searchable text field (parts.description).
+
+Promotion: validated changes on dev are promoted to main (git) and production (Lakebase) for the demo.

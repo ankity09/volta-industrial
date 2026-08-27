@@ -1,0 +1,18 @@
+echo "Lakebase instance: projects/volta (branch: dev, endpoint: primary)"
+/var/folders/ln/477tp5qs2b513qxsgthr8t9m0000gp/T//kp.hEyzdJ: line 12: return: can only `return' from a function or sourced script
+echo "Host: $HOST"
+/var/folders/ln/477tp5qs2b513qxsgthr8t9m0000gp/T//kp.hEyzdJ: line 13: return: can only `return' from a function or sourced script
+echo "Connected as: $ME (Postgres role ankit-yadav, DATABRICKS_SUPERUSER)"
+/var/folders/ln/477tp5qs2b513qxsgthr8t9m0000gp/T//kp.hEyzdJ: line 14: return: can only `return' from a function or sourced script
+echo ""
+/var/folders/ln/477tp5qs2b513qxsgthr8t9m0000gp/T//kp.hEyzdJ: line 15: return: can only `return' from a function or sourced script
+PGPASSWORD="$TOKEN" psql "host=$HOST user=$ME dbname=databricks_postgres sslmode=require" -c "SELECT version();"
+/var/folders/ln/477tp5qs2b513qxsgthr8t9m0000gp/T//kp.hEyzdJ: line 16: return: can only `return' from a function or sourced script
+echo "--- extensions (Lakebase Search) ---"
+/var/folders/ln/477tp5qs2b513qxsgthr8t9m0000gp/T//kp.hEyzdJ: line 17: return: can only `return' from a function or sourced script
+PGPASSWORD="$TOKEN" psql "host=$HOST user=$ME dbname=databricks_postgres sslmode=require" -c "SELECT extname, extversion FROM pg_extension WHERE extname IN ('vector','lakebase_vector','lakebase_text') ORDER BY extname;"
+/var/folders/ln/477tp5qs2b513qxsgthr8t9m0000gp/T//kp.hEyzdJ: line 18: return: can only `return' from a function or sourced script
+echo "--- mirror table row counts ---"
+/var/folders/ln/477tp5qs2b513qxsgthr8t9m0000gp/T//kp.hEyzdJ: line 19: return: can only `return' from a function or sourced script
+PGPASSWORD="$TOKEN" psql "host=$HOST user=$ME dbname=databricks_postgres sslmode=require" -c "SELECT 'line_status' t, COUNT(*) n FROM app.line_status UNION ALL SELECT 'open_atrisk', COUNT(*) FROM app.open_atrisk UNION ALL SELECT 'maintenance_recommendations', COUNT(*) FROM app.maintenance_recommendations UNION ALL SELECT 'parts', COUNT(*) FROM app.parts ORDER BY t;"
+/var/folders/ln/477tp5qs2b513qxsgthr8t9m0000gp/T//kp.hEyzdJ: line 20: return: can only `return' from a function or sourced script

@@ -1,0 +1,10 @@
+Lakebase Search (hybrid full-text, BM25) over the operational parts catalog.
+Natural-language query: "grinder bearing expedite not stocked locally"
+Index: app.parts_bm25_idx (lakebase_bm25 AM) over a generated tsvector of (part_name, description).
+Retrieval never leaves the Databricks account. Powers the app's search_parts tool (the expedite-parts play).
+
+SQL:
+SELECT part_id, part_name, part_local, lead_time_days, description
+FROM app.parts
+ORDER BY search_tsv <@> to_bm25query('grinder bearing expedite not stocked locally', 'app.parts_bm25_idx')
+LIMIT 5;

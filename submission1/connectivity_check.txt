@@ -1,0 +1,26 @@
+Lakebase instance: projects/volta (branch: dev, endpoint: primary)
+Host: ep-steep-brook-d82sqg6v.database.us-east-2.cloud.databricks.com
+Connected as: ankit.yadav@databricks.com (Postgres role ankit-yadav, DATABRICKS_SUPERUSER)
+
+                                                      version                                                       
+--------------------------------------------------------------------------------------------------------------------
+ PostgreSQL 17.11 (32e7196) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+(1 row)
+
+--- extensions (Lakebase Search) ---
+     extname     | extversion 
+-----------------+------------
+ lakebase_text   | 0.1.1
+ lakebase_vector | 1.1.0
+ vector          | 0.8.0
+(3 rows)
+
+--- mirror table row counts ---
+              t              |  n  
+-----------------------------+-----
+ line_status                 | 258
+ maintenance_recommendations | 155
+ open_atrisk                 | 155
+ parts                       | 800
+(4 rows)
+

@@ -1,0 +1,3 @@
+Representative business question for Volta Industrial (Sam Ortiz, VP Manufacturing Ops):
+"Which plants have the most production lines trending toward an unplanned stop, and what is the downtime-at-risk dollar exposure concentrated there?"
+Answered from the synced operational data (app.line_status), the same governed rows the app serves at low latency.
