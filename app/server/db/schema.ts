@@ -3,6 +3,8 @@ import {
   timestamp,
   uuid,
   integer,
+  bigint,
+  smallint,
   doublePrecision,
   jsonb,
   pgSchema,
@@ -204,7 +206,9 @@ export const parts = appSchema.table(
 export const workOrdersApp = appSchema.table(
   'work_orders_app',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    // Matches the team's canonical Lakebase table (Brian): bigint identity id,
+    // proposed/approved/executed/overridden status, priority column.
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
     lineId: text('line_id').notNull(),
     actionType: text('action_type', {
       enum: ['pull_now', 'run_to_shift_end', 'expedite_parts_and_run'],
@@ -213,10 +217,10 @@ export const workOrdersApp = appSchema.table(
     draftedWo: text('drafted_wo').notNull(),
     predictedDowntimeCostAvoidsUsd: doublePrecision('predicted_downtime_cost_avoided_usd'),
     status: text('status', {
-      enum: ['drafted', 'approved', 'rejected'],
+      enum: ['proposed', 'approved', 'executed', 'overridden'],
     })
       .notNull()
-      .default('drafted'),
+      .default('proposed'),
     approvedBy: text('approved_by'),
     auditTrail: jsonb('audit_trail')
       .$type<MaintenanceAuditEntry[]>()
@@ -226,6 +230,7 @@ export const workOrdersApp = appSchema.table(
       .notNull()
       .defaultNow(),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
+    priority: smallint('priority'),
   },
   (t) => [
     index('work_orders_line_idx').on(t.lineId, t.status),
