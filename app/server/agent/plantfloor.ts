@@ -1,5 +1,5 @@
 /**
- * The plant-floor agent — the DEMO'S DEFINING PIECE, and the
+ * The plant-floor agent, the DEMO'S DEFINING PIECE, and the
  * WORKSHOP'S main graded surface.
  *
  * Built on `@openai/agents` (OpenAI Agents SDK) pointed at Databricks'
@@ -11,23 +11,23 @@
  * ════════════════════════════════════════════════════════════════════════
  * SHIPS WORKING:
  *   - The full agent loop (Responses API wiring, streaming, MLflow spans).
- *   - `ask_data` — the investigation tool. Config-driven MAS-OR-Genie:
+ *   - `ask_data`, the investigation tool. Config-driven MAS-OR-Genie:
  *     uses the MAS endpoint if `masEndpointName` is set, else the Genie
  *     space if `genieSpaceId` is set. This is the trainee's Build-1 choice
  *     (they wire ONE backend); the app registers whichever is configured.
  *
- * TRAINEE BUILDS (stubbed here — they THROW "not implemented" so the app
+ * TRAINEE BUILDS (stubbed here, they THROW "not implemented" so the app
  * still compiles + boots, and the model knows the tools exist):
  *   - `find_atrisk_line`          → Build 2 (Assist): read at-risk line
  *   - `rank_maintenance_actions`  → Build 2 (Assist): read ML ranking
  *   - `execute_maintenance_action`→ Build 3 (Act):   the human-in-the-loop write
  *
  * The three-phase chain (Discover → Draft+confirm → Execute) is described in
- * the instructions below so the model attempts it — but Phases 2/3 depend on
+ * the instructions below so the model attempts it, but Phases 2/3 depend on
  * the stubbed tools, which is the point: the trainee implements them and the
  * chain lights up. Until then, the model can still investigate via ask_data.
  *
- * KEEP `configureAgentsSdk()` as-is — it handles the Databricks Responses API
+ * KEEP `configureAgentsSdk()` as-is, it handles the Databricks Responses API
  * wiring, the `Connection: close` stale-socket workaround, and the 64-char
  * `input[*].id` strip.
  */
@@ -45,6 +45,14 @@ import * as mlflow from 'mlflow-tracing';
 import { z } from 'zod';
 import { authHeaders } from '../lib/auth.js';
 import type { AppDb } from '../db/index.js';
+import {
+  worstAtriskLine,
+  getAtriskLine,
+  getLineStatus,
+  getRecommendation,
+  searchParts,
+  recordMaintenanceAction,
+} from '../db/queries/maintenance.js';
 // Data-backend helpers. Both are config-driven and share the same
 // DataCallResult shape + ToolProgressEvent stream, so the `ask_data` tool
 // below can delegate to EITHER without the UI caring which powers it. This
@@ -69,7 +77,7 @@ export type AgentContext = {
   /** MAS serving-endpoint name the `ask_data` tool talks to WHEN SET. Set in
    * `config/app.json` as `masEndpointName` (env `MAS_ENDPOINT_NAME`). Leave
    * empty to use Genie instead. This is the trainee's Build-1 backend choice
-   * — the app registers whichever of MAS/Genie is configured. */
+   *, the app registers whichever of MAS/Genie is configured. */
   masEndpointName: string;
   /** Genie space id the `ask_data` tool talks to WHEN `masEndpointName` is
    * empty. Set as `genieSpaceId` (env `GENIE_SPACE_ID`). */
@@ -80,10 +88,16 @@ export type AgentContext = {
   onToolProgress?: (ev: import('./tools/types.js').ToolProgressEvent) => void;
   /** Mutated by the OpenAI fetch shim on any non-2xx. */
   modelError?: { current: ModelErrorDetail | null };
+  /** The production line currently under discussion, set by the tools as they
+   * resolve one (find_atrisk_line / rank_maintenance_actions /
+   * execute_maintenance_action). Read by the OpenAI fetch shim to stamp the
+   * Unity AI Gateway per-line request tag on each model call. Undefined until a
+   * tool has named a line. */
+  lineInFocus?: string;
 };
 
 // ────────────────────────────────────────────────────────────────────────────
-// Adding / editing tools — READ THIS before touching `parameters: z.object(...)`.
+// Adding / editing tools, READ THIS before touching `parameters: z.object(...)`.
 //
 // The Agents SDK ships every tool's zod schema to the Responses API with
 // `strict: true`. Strict mode requires EVERY property in `required`. So use
@@ -94,7 +108,7 @@ export type AgentContext = {
 // Use the `loggedTool` wrapper (imported as `tool`), not the raw SDK `tool`.
 // ────────────────────────────────────────────────────────────────────────────
 function makeTools(ctx: AgentContext): Tool[] {
-  // ── ask_data — SHIPS WORKING. Config-driven MAS-OR-Genie. ─────────────────
+  // ── ask_data, SHIPS WORKING. Config-driven MAS-OR-Genie. ─────────────────
   // Delegates to the MAS endpoint if one is configured, else the Genie space.
   // Both helpers return {answer, trace_id} and stream progress via
   // ctx.onToolProgress → the Thinking panel. Registered ONLY when a backend
@@ -102,12 +116,12 @@ function makeTools(ctx: AgentContext): Tool[] {
   const askData = tool({
     name: 'ask_data',
     description:
-      'Investigate the governed lakehouse with a natural-language question — the tool generates SQL / retrieves knowledge and returns a synthesized answer. Use for any "why" / "what happened" / investigative question about production lines, failure trends, maintenance history, or parts availability. Prefer ONE narrow, well-formed question over many small ones.',
+      'Investigate the governed lakehouse with a natural-language question, the tool generates SQL / retrieves knowledge and returns a synthesized answer. Use for any "why" / "what happened" / investigative question about production lines, failure trends, maintenance history, or parts availability. Prefer ONE narrow, well-formed question over many small ones.',
     parameters: z.object({
       question: z
         .string()
         .describe(
-          'A clear, focused English question about the data. Narrow questions finish in 20–40s; broad multi-part questions take longer.',
+          'A clear, focused English question about the data. Narrow questions finish in 20-40s; broad multi-part questions take longer.',
         ),
     }),
     execute: async ({ question }) =>
@@ -124,13 +138,10 @@ function makeTools(ctx: AgentContext): Tool[] {
       ),
   });
 
-  // ── find_atrisk_line — TRAINEE BUILDS (Build 2 · Assist). STUB. ──────────
-  // TODO — BUILD 2 (trainee): implement this. Read the at-risk line with the
-  // worst downtime_exposure_usd from Lakebase app.open_atrisk, plus its status
-  // from app.line_status: line_id, plant_id, line_name, failure_risk_score,
-  // downtime_exposure_usd, part_local, candidate_part_id, part_lead_time_days.
-  // Helper queries are READY in server/db/queries/maintenance.ts: `worstAtriskLine`,
-  // `getLineStatus`, `getPosition`. See APP_WORKSHOP.md → "Layer 2 — Assist".
+  // ── find_atrisk_line · Discovery. Reads Lakebase app.open_atrisk + ──────────
+  // app.line_status. If line_id is null, returns the worst at-risk line by
+  // downtime_exposure_usd. Combines the at-risk parts context (part_local,
+  // candidate_part_id, part_lead_time_days) with the line's current status.
   const findAtriskLine = tool({
     name: 'find_atrisk_line',
     description:
@@ -145,21 +156,46 @@ function makeTools(ctx: AgentContext): Tool[] {
         .nullable()
         .describe('Plant id, e.g. PLANT-03. Null if line_id is also null.'),
     }),
-    execute: async () => {
-      throw new Error(
-        'Not implemented — this is your Build 2 Assist task; see APP_WORKSHOP.md',
-      );
-    },
+    execute: async ({ line_id }) =>
+      mlflow.withSpan(
+        async () => {
+          const atrisk = line_id
+            ? await getAtriskLine(ctx.db, line_id)
+            : await worstAtriskLine(ctx.db);
+          if (!atrisk) return { found: false };
+
+          // Remember the line under discussion so the model-call request tags
+          // (Unity AI Gateway per-line attribution) can name it downstream.
+          ctx.lineInFocus = atrisk.lineId;
+
+          const status = await getLineStatus(ctx.db, atrisk.lineId);
+          return {
+            found: true,
+            line_id: atrisk.lineId,
+            plant_id: atrisk.plantId,
+            line_name: atrisk.lineName,
+            plant_name: status?.plantName ?? null,
+            failure_risk_score: atrisk.failureRiskScore,
+            downtime_exposure_usd: atrisk.downtimeExposureUsd,
+            current_status: status?.currentStatus ?? null,
+            part_local: atrisk.partLocal,
+            candidate_part_id: atrisk.candidatePartId,
+            part_lead_time_days: atrisk.partLeadTimeDays,
+          };
+        },
+        {
+          name: 'find_atrisk_line',
+          spanType: mlflow.SpanType.TOOL,
+          inputs: { line_id },
+        },
+      ),
   });
 
-  // ── rank_maintenance_actions — TRAINEE BUILDS (Build 2 · Assist). STUB. ───
-  // TODO — BUILD 2 (trainee): implement this. Read app.maintenance_recommendations
-  // for the line_id and return the model's recommended_action,
-  // predicted_downtime_cost_usd, and the full action_ranking (all three options
-  // with predicted costs + net $ + part lead times). This is the demo's
-  // "ML in the loop" moment — the agent quotes the ranked options +
-  // recommends the top action in the draft. Helper query READY: `getRecommendation`
-  // in maintenance.ts. See APP_WORKSHOP.md → "Layer 2 — Assist".
+  // ── rank_maintenance_actions · Discovery. The "ML in the loop" read. ──────
+  // Reads app.maintenance_recommendations (mirrored from
+  // gold_maintenance_recommendations) for the line and returns the recommended
+  // action, its predicted downtime cost, and the full action_ranking (all three
+  // options). The agent quotes all three + recommends the top one in the draft.
   const rankMaintenanceActions = tool({
     name: 'rank_maintenance_actions',
     description:
@@ -167,17 +203,39 @@ function makeTools(ctx: AgentContext): Tool[] {
     parameters: z.object({
       line_id: z.string().describe('Line id, e.g. LINE-04.'),
     }),
-    execute: async () => {
-      throw new Error(
-        'Not implemented — this is your Build 2 Assist task; see APP_WORKSHOP.md',
-      );
-    },
+    execute: async ({ line_id }) =>
+      mlflow.withSpan(
+        async () => {
+          ctx.lineInFocus = line_id;
+          const rec = await getRecommendation(ctx.db, line_id);
+          if (!rec) {
+            return {
+              scored: false,
+              note: 'No maintenance recommendation yet. Build + score the maintenance_recommender model (Build 2 ML step), then reset the demo.',
+            };
+          }
+          return {
+            scored: true,
+            line_id: rec.lineId,
+            recommended_action: rec.recommendedAction,
+            predicted_downtime_cost_usd: rec.predictedDowntimeCostUsd,
+            action_ranking: rec.actionRanking,
+          };
+        },
+        {
+          name: 'rank_maintenance_actions',
+          spanType: mlflow.SpanType.TOOL,
+          inputs: { line_id },
+        },
+      ),
   });
 
-  // ── search_parts — TRAINEE BUILDS (Build 2c · Search). STUB. ──────────────
-  // TODO — BUILD 2c (trainee): implement this. Search app.parts (Lakebase Search)
-  // for parts matching the query (description field). Return top 5–10 matches.
-  const searchParts = tool({
+  // ── search_parts, Discovery (parts context). Powers the expedite play. ──
+  // Lakebase Search (hybrid full-text + vector) over app.parts (part_name +
+  // description). Returns the top candidates so the agent can find the
+  // replacement part + confirm whether it is stocked locally when ranking the
+  // expedite_parts_and_run option. Helper: searchParts in db/queries/maintenance.ts.
+  const searchPartsTool = tool({
     name: 'search_parts',
     description:
       'Search the parts catalog via Lakebase Search over part names + descriptions. Returns top matches with part_id, part_name, part_category, part_local, lead_time_days. Use when exploring alternatives or verifying part availability.',
@@ -186,26 +244,36 @@ function makeTools(ctx: AgentContext): Tool[] {
         .string()
         .describe('Free-text search query, e.g. "bearing seal 40mm" or "hydraulic pump".'),
     }),
-    execute: async () => {
-      throw new Error(
-        'Not implemented — this is your Build 2c Search task; see APP_WORKSHOP.md',
-      );
-    },
+    execute: async ({ query }) =>
+      mlflow.withSpan(
+        async () => {
+          const candidates = await searchParts(ctx.db, query);
+          if (candidates.length === 0) {
+            return { matches_found: false, note: 'No matching parts found.' };
+          }
+          return { matches_found: true, candidates };
+        },
+        {
+          name: 'search_parts',
+          spanType: mlflow.SpanType.TOOL,
+          inputs: { query },
+        },
+      ),
   });
 
-  // ── execute_maintenance_action — TRAINEE BUILDS (Build 3 · Act). STUB. ────
-  // TODO — BUILD 3 (trainee): implement this — the human-in-the-loop WRITE.
-  // ONLY call this AFTER the user has explicitly approved. Write the approved
-  // action to Lakebase app.work_orders_app (action_type, line_id, part_id,
-  // drafted_wo, predicted_downtime_cost_avoided_usd, status='approved',
-  // approved_by=ctx.userEmail, an appended audit entry). Inputs are a FILTER
-  // (line_id, action_type, part_id?) + the drafted WO text — NEVER a list of ids.
-  // Wrap the write in db.transaction(...). On commit the caller emits dataMutated
-  // so the Plant Floor page cascades. See APP_WORKSHOP.md → "Layer 3 — Act".
+  // ── execute_maintenance_action, Act. The human-in-the-loop WRITE. ────────
+  // ONLY runs AFTER the user has explicitly approved (Phase 3 of the chain, 
+  // the instructions gate it). Writes the approved action to Lakebase
+  // app.work_orders_app (status='approved', approved_by=ctx.userEmail, an
+  // appended audit entry) inside a transaction. Inputs are a FILTER (line_id,
+  // action_type, part_id?) + the drafted WO text, NEVER a list of ids. The row
+  // commits before the chat turn ends, so the client's turn-end dataMutated
+  // refetch makes the Plant Floor page cascade with no reload. Helper:
+  // recordMaintenanceAction in db/queries/maintenance.ts.
   const executeMaintenanceAction = tool({
     name: 'execute_maintenance_action',
     description:
-      'WRITE (requires prior user approval): record the approved maintenance action to Lakebase app.work_orders_app — action_type, line_id, part_id, the drafted work order, predicted downtime cost avoided — append an audit entry, and set status to approved. Inputs are a FILTER + the drafted WO text, never a list of ids. Use ONLY after the user says yes.',
+      'WRITE (requires prior user approval): record the approved maintenance action to Lakebase app.work_orders_app, action_type, line_id, part_id, the drafted work order, predicted downtime cost avoided, append an audit entry, and set status to approved. Inputs are a FILTER + the drafted WO text, never a list of ids. Use ONLY after the user says yes.',
     parameters: z.object({
       line_id: z.string().describe('Production line id, e.g. LINE-04.'),
       action_type: z
@@ -223,16 +291,43 @@ function makeTools(ctx: AgentContext): Tool[] {
         .nullable()
         .describe('Predicted $ of downtime cost avoided by this action.'),
     }),
-    execute: async () => {
-      throw new Error(
-        'Not implemented — this is your Build 3 Act task; see APP_WORKSHOP.md',
-      );
-    },
+    execute: async ({
+      line_id,
+      action_type,
+      part_id,
+      drafted_work_order,
+      predicted_downtime_cost_avoided_usd,
+    }) =>
+      mlflow.withSpan(
+        async () => {
+          ctx.lineInFocus = line_id;
+          const { actionId } = await recordMaintenanceAction(ctx.db, {
+            lineId: line_id,
+            actionType: action_type,
+            partId: part_id,
+            draftedWorkOrder: drafted_work_order,
+            predictedDowntimeCostAvoidsUsd: predicted_downtime_cost_avoided_usd,
+            userEmail: ctx.userEmail,
+          });
+          return {
+            recorded: true,
+            action_id: actionId,
+            line_id,
+            action_type,
+            predicted_downtime_cost_avoided_usd,
+          };
+        },
+        {
+          name: 'execute_maintenance_action',
+          spanType: mlflow.SpanType.TOOL,
+          inputs: { line_id, action_type, part_id },
+        },
+      ),
   });
 
   // Config-driven data-backend tool registration. Register ONLY when a backend
   // is configured (otherwise the tool would 404 confusingly).
-  const tools: Tool[] = [findAtriskLine, rankMaintenanceActions, searchParts, executeMaintenanceAction];
+  const tools: Tool[] = [findAtriskLine, rankMaintenanceActions, searchPartsTool, executeMaintenanceAction];
   if (ctx.masEndpointName) {
     tools.push(askData);
   } else if (ctx.genieSpaceId) {
@@ -248,7 +343,7 @@ export async function configureAgentsSdk(ctx: AgentContext): Promise<void> {
   const headers = await authHeaders(ctx.req);
   const bearer = headers.get('Authorization')?.replace(/^Bearer /, '') ?? '';
   // NOTE: we used to wrap with mlflow-openai's `tracedOpenAI()`, but its
-  // wrapper `await`s the response to snapshot outputs — which breaks
+  // wrapper `await`s the response to snapshot outputs, which breaks
   // streaming responses. Skip it; we still get agent-level spans via the
   // root `plantfloor.turn` and per-tool `withSpan` wrappers.
   //
@@ -265,7 +360,7 @@ export async function configureAgentsSdk(ctx: AgentContext): Promise<void> {
   // Problem:
   //   On the synthesis turn (after a tool output is fed back), the agent
   //   run fails with `502 status code (no body)` after ~3s. The failure
-  //   is deterministic, not transient — retries don't help.
+  //   is deterministic, not transient, retries don't help.
   //
   // Root cause:
   //   The @openai/agents SDK assigns long IDs (e.g. `fc_013bda62…` ~190
@@ -280,18 +375,36 @@ export async function configureAgentsSdk(ctx: AgentContext): Promise<void> {
   // Fix:
   //   Intercept outgoing request bodies and delete any `input[i].id`
   //   longer than 64 chars. Databricks treats missing ids as freshly
-  //   generated, so this is safe — the conversation continuity is
+  //   generated, so this is safe, the conversation continuity is
   //   carried by `call_id` (short) for function calls, not `id`.
   //
   // Remove this wrapper once Databricks lifts the 64-char limit.
   // ──────────────────────────────────────────────────────────────────
   const client = new OpenAI({
     apiKey: bearer,
-    baseURL: `${ctx.databricksHost}/serving-endpoints`,
+    // Route every model call through the team's Unity AI Gateway (Build 3)
+    // instead of a raw /serving-endpoints passthrough. Only the gateway path
+    // applies the per-plant spend cap, guardrails, and per-line inference
+    // logging; a raw system.ai.* passthrough is NOT governed. The gateway
+    // service advertises openai/v1/responses, so the Responses-API agent works
+    // unchanged apart from this base URL. `ctx.model` is the gateway's 3-part
+    // model-service name (see config/app.json agentModel).
+    baseURL: `${ctx.databricksHost}/ai-gateway/mlflow/v1`,
     maxRetries: 4,
     fetch: async (input, init) => {
       const headers = new Headers(init?.headers);
       headers.set('Connection', 'close');
+      // Per-line attribution for the Unity AI Gateway inference table. Tags let
+      // the gateway attribute spend + logged inferences to the plant line under
+      // discussion. `lineInFocus` is set by the tools as they resolve a line;
+      // fall back to the app tag alone before any tool has named one.
+      const requestTags: Record<string, string> = { app: 'volta_plant_floor' };
+      if (ctx.lineInFocus) requestTags.line_id = ctx.lineInFocus;
+      if (ctx.userEmail) requestTags.user = ctx.userEmail;
+      headers.set(
+        'Databricks-Ai-Gateway-Request-Tags',
+        JSON.stringify(requestTags),
+      );
       let body = init?.body;
       if (typeof body === 'string' && body.startsWith('{')) {
         try {
@@ -327,7 +440,7 @@ export async function configureAgentsSdk(ctx: AgentContext): Promise<void> {
           }
           body = JSON.stringify(parsed);
         } catch {
-          /* not JSON — pass through */
+          /* not JSON, pass through */
         }
       }
       // Always log the URL + status so failures show up in server logs.
@@ -338,10 +451,10 @@ export async function configureAgentsSdk(ctx: AgentContext): Promise<void> {
         typeof input === 'string'
           ? input
           : (input as URL | Request).toString?.() ?? String(input);
-      // Log every outgoing request — URL + payload preview. Without this
+      // Log every outgoing request, URL + payload preview. Without this
       // a "200 OK but empty stream" looks indistinguishable from "we never
       // called the model at all" in the logs. DEBUG-level (silent by
-      // default) — set LOG_LEVEL=debug to see per-request payloads.
+      // default), set LOG_LEVEL=debug to see per-request payloads.
       console.debug(
         `[openai-shim] → ${url}\n  request_body: ${typeof body === 'string' ? body.slice(0, 2000) : '(non-string)'}`,
       );
@@ -371,7 +484,7 @@ export async function configureAgentsSdk(ctx: AgentContext): Promise<void> {
             code = parsed.error_code;
             message = parsed.message;
           } catch {
-            /* body wasn't JSON — keep raw text */
+            /* body wasn't JSON, keep raw text */
           }
           if (ctx.modelError) {
             ctx.modelError.current = {
@@ -393,12 +506,12 @@ export async function configureAgentsSdk(ctx: AgentContext): Promise<void> {
     },
   });
   setDefaultOpenAIClient(client);
-  // Use the Responses API (the SDK's default — we leave setOpenAIAPI alone).
+  // Use the Responses API (the SDK's default, we leave setOpenAIAPI alone).
   // This template ships with `databricks-gpt-5-4` as the baseline agent model
   // because it supports both the Responses API passthrough AND the SDK-native
   // `response.reasoning_summary_text.*` event stream (which the UI subscribes to
   // for the live "thinking" panel). A newer GPT endpoint with `/responses`
-  // enabled works too — the requirement is the Responses API, not this version.
+  // enabled works too, the requirement is the Responses API, not this version.
   setTracingDisabled(true); // disable OpenAI's tracing backend; we use MLflow
 }
 
@@ -427,28 +540,28 @@ decisive, concise, and always lead with the number.
 TOOLS AT YOUR DISPOSAL
 ════════════════════════════════════════════════════════════
 
-ask_data(question) — delegates to the multi-agent supervisor. Use for any
+ask_data(question), delegates to the multi-agent supervisor. Use for any
   WHY / WHAT HAPPENED / investigative question about production lines,
   failure trends, maintenance history, or parts availability.
   Prefer ONE well-formed question over many small ones.
 
-find_atrisk_line(line_id?, plant_id?) — read the worst at-risk production line
+find_atrisk_line(line_id?, plant_id?), read the worst at-risk production line
   from Lakebase: line_id, plant_id, line_name, failure_risk_score,
   downtime_exposure_usd, and the candidate part (part_local flag, part_id,
   lead_time_days). If both null, returns the worst at-risk line.
 
-rank_maintenance_actions(line_id) — THE ML RANKING TOOL. Read app.maintenance_recommendations
+rank_maintenance_actions(line_id), THE ML RANKING TOOL. Read app.maintenance_recommendations
   for the line and return the model's recommended_action, predicted_downtime_cost_usd,
   and the full action_ranking (all three options: pull_now / run_to_shift_end /
   expedite_parts_and_run). Quote all three in the draft; the agent picks which to
   recommend.
 
-search_parts(query) — search the parts catalog via Lakebase Search over names +
+search_parts(query), search the parts catalog via Lakebase Search over names +
   descriptions. Returns top matches with part_id, part_name, part_category,
   part_local, lead_time_days. Use when exploring parts or verifying availability.
 
 execute_maintenance_action(line_id, action_type, part_id?, drafted_work_order,
-  predicted_downtime_cost_avoided_usd?) — THE WRITE TOOL, APPROVAL-GATED.
+  predicted_downtime_cost_avoided_usd?), THE WRITE TOOL, APPROVAL-GATED.
   Record the approved action to app.work_orders_app: action_type, line_id,
   part_id, drafted_wo, predicted_downtime_cost_avoided_usd, status='approved',
   approved_by from userEmail, plus an audit entry. Inputs are a FILTER + drafted
@@ -462,7 +575,7 @@ no "add notes". Everything you can do is in the tools above.
 OPERATING MODES
 ════════════════════════════════════════════════════════════
 
-MODE A — INVESTIGATION
+MODE A, INVESTIGATION
 If the user asks "why", "what", "who", "when", or anything that requires
 reading data or documents → call ask_data EXACTLY ONCE with a SHORT,
 targeted question. Then synthesize for the user. Do NOT use the action
@@ -479,7 +592,7 @@ Prefer ONE of these shapes over the broad "tell me everything":
 Avoid: asking for all at-risk lines + all recommended actions + all recent
 incidents in a single question. The supervisor will hop 4 times.
 
-MODE B — ACTION CHAIN (HUMAN-IN-THE-LOOP, RANKED BY ML)
+MODE B, ACTION CHAIN (HUMAN-IN-THE-LOOP, RANKED BY ML)
 If the user asks you to HANDLE / FIX / SCHEDULE / EXECUTE something, you
 run a three-phase chain with a confirmation step in the middle. The defining
 move: **you rank the recovery options by the ML model's predicted value**.
@@ -493,10 +606,10 @@ now. You don't call the model; you read the ranked options from app.maintenance_
 ALWAYS quote the full ranking (predicted $ for each option) so the user sees the
 model's logic before approving.
 
-**Frame expedite honestly — it is NOT co-equal.** expedite_parts_and_run only nets
+**Frame expedite honestly, it is NOT co-equal.** expedite_parts_and_run only nets
 positive value when the part is stocked LOCALLY (part_local = true, short lead time),
 which happens on moderate-risk lines. For a high-risk line whose part is non-local
-(like LINE-04's ~14-day lead time), expedite is the weakest play and pull_now wins —
+(like LINE-04's ~14-day lead time), expedite is the weakest play and pull_now wins, 
 the part_local flag decides which options are even viable. Never present the three as
 equal choices; let the ranking + part locality drive the recommendation.
 
@@ -510,16 +623,16 @@ user has explicitly approved.
      precise question: "Which production line is at highest failure risk
      right now, and what is the candidate part?". Extract the line_id
      and plant_id from the answer. If ask_data cannot produce a clear line,
-     ask the user once — do not guess.
+     ask the user once, do not guess.
 
   2. Call find_atrisk_line(line_id, plant_id). Output: line_name,
      failure_risk_score, downtime_exposure_usd, part_local, candidate_part_id,
-     part_lead_time_days, current_status. Remember these — you quote them in
+     part_lead_time_days, current_status. Remember these, you quote them in
      Phase 2.
 
   3. Call rank_maintenance_actions(line_id). Output: recommended_action,
      predicted_downtime_cost_usd, action_ranking (all three options with
-     predicted downtime costs + net $). Remember the full ranking — you
+     predicted downtime costs + net $). Remember the full ranking, you
      quote ALL THREE options in Phase 2 because the story beat is "here's
      what the model ranked".
 
@@ -542,7 +655,7 @@ user has explicitly approved.
          | Action | Predicted Cost Avoided | Est. Net Value |
          showing pull_now / run_to_shift_end / expedite_parts_and_run.
        - A single-sentence CTA:
-           "Reply **pull the line** to approve the recommended action —
+           "Reply **pull the line** to approve the recommended action, 
             or ask me to reconsider."
 
      STOP HERE. Do not proceed until the user's next message.
@@ -565,7 +678,7 @@ user has explicitly approved.
          drafted_work_order: the full work order text from phase 2 step 4
          predicted_downtime_cost_avoided_usd: from rank_maintenance_actions
 
-    B. Final summary — see "SUMMARY FORMAT" below. Use counts + values
+    B. Final summary, see "SUMMARY FORMAT" below. Use counts + values
        returned by the tool, not your own memory.
 
 If execute_maintenance_action errors, surface the error plainly. Never
@@ -576,7 +689,7 @@ WORK ORDER CRAFT
 ════════════════════════════════════════════════════════════
 
 Tone: direct, professional, actionable. This is a safety-critical ticket.
-Length: ~200 words — enough detail for the maintenance crew.
+Length: ~200 words, enough detail for the maintenance crew.
 
 Include:
   - Line id + plant location
@@ -585,7 +698,7 @@ Include:
   - Part id + lead time if applicable
   - Verification steps (how to confirm the action was effective)
 
-Never use jargon without context — translate "cavitation risk" to "pump
+Never use jargon without context, translate "cavitation risk" to "pump
 failure due to internal pressure collapse".
 
 --- TEMPLATE EXAMPLE (use this shape, rewrite the prose if you want) ---
@@ -621,7 +734,7 @@ SUMMARY FORMAT (final assistant message)
 ALWAYS end an action chain with a markdown summary the ops exec can
 read in 10 seconds. Example:
 
-**Done — LINE-04 maintenance scheduled.**
+**Done, LINE-04 maintenance scheduled.**
 
 - **Line:** LINE-04 (PLANT-03, Ohio) | Risk score 87% → controlled
 - **Action:** Pull the line immediately (4-hour window)
@@ -636,8 +749,8 @@ Rules:
 - Markdown-bold the headline stat on line 1.
 - Numbers come from your tool calls (rank_maintenance_actions returns
   predicted_downtime_cost_avoided_usd; find_atrisk_line returns part_lead_time_days)
-  — NOT from memory.
-- Quote the full ML ranking from rank_maintenance_actions — all three options
+ , NOT from memory.
+- Quote the full ML ranking from rank_maintenance_actions, all three options
   with $ values. That's the load-bearing model-value moment.
 - Close with ONE concrete "next step" only.
 
@@ -647,7 +760,7 @@ TONE
 
 The user is busy. Lead with the answer. No preamble like "Sure, I'll
 help!". No questions-about-your-question unless something is genuinely
-ambiguous. When investigating, synthesize — don't dump raw data. On the
+ambiguous. When investigating, synthesize, don't dump raw data. On the
 plant floor, speed and clarity matter.
 `.trim(),
     tools: makeTools(ctx),

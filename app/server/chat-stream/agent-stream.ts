@@ -44,7 +44,7 @@ type Msg = { role: string; content: string };
  *   - The OpenAI SDK strips response bodies before throwing, so we install
  *     a fetch shim in plantfloor.ts that captures the body to ctx.modelError.
  *     The catch block below prefers that detail over the SDK's stripped
- *     "400 status code (no body)" — what reaches the user is actionable.
+ *     "400 status code (no body)", what reaches the user is actionable.
  *   - Whatever we put into the SSE `error` event is what the chat bubble
  *     renders in its red panel (see useChatTurn → onError → patchLast).
  */
@@ -54,7 +54,7 @@ export async function streamAgentTurn(args: {
   res: Response;
   userEmail: string;
   /** MAS endpoint name. Replace with `genieSpaceId` if your demo uses
-   * Genie — see plantfloor.ts AgentContext for the matching change. */
+   * Genie, see plantfloor.ts AgentContext for the matching change. */
   masEndpointName: string;
   genieSpaceId: string;
   databricksHost: string;
@@ -95,7 +95,7 @@ export async function streamAgentTurn(args: {
   // end. withSpan enters the OpenTelemetry active context for the callback's
   // duration, so any OTel-instrumented code that runs inside (notably the
   // AppKit Lakebase pool's auto `lakebase.query` spans) gets adopted as a
-  // CHILD of this agent span — instead of starting an orphan OTel trace and
+  // CHILD of this agent span, instead of starting an orphan OTel trace and
   // triggering "No trace ID found for span lakebase.query. Skipping." every
   // turn. Net effect: DB query latency now shows up inside the agent trace
   // tree in MLflow.
@@ -206,7 +206,7 @@ export async function streamAgentTurn(args: {
         ? (history as Parameters<typeof runAgent>[1])
         : userInput;
     runStartMs = Date.now();
-    // Dump role sequence (not content — keep logs readable) so a malformed
+    // Dump role sequence (not content, keep logs readable) so a malformed
     // history like [user, user, user, ...] (no assistants) is obvious. The
     // Responses API often returns an empty stream when given a degenerate
     // history; without this line you'd just see "0 events" with no clue why.
@@ -214,7 +214,7 @@ export async function streamAgentTurn(args: {
       ? (runInput as Array<{ role: string }>).map((m) => m.role).join(',')
       : 'single-string';
     console.debug(
-      `[agent-stream] runAgent start — history_len=${messages.length} filtered_len=${Array.isArray(runInput) ? (runInput as unknown[]).length : 1} input_chars=${userInput.length} roles=[${roleSeq}]`,
+      `[agent-stream] runAgent start, history_len=${messages.length} filtered_len=${Array.isArray(runInput) ? (runInput as unknown[]).length : 1} input_chars=${userInput.length} roles=[${roleSeq}]`,
     );
     const stream = await runAgent(agent, runInput as string, { stream: true, signal });
     console.debug(
@@ -226,11 +226,11 @@ export async function streamAgentTurn(args: {
       // The Agents SDK emits multiple event shapes depending on the
       // underlying API (Responses vs Chat Completions) and the model:
       //   1. { data: { type: 'output_text_delta', delta: '...' } }
-      //      SDK-normalized text delta — ALWAYS available, regardless of
+      //      SDK-normalized text delta, ALWAYS available, regardless of
       //      whether setOpenAIAPI is 'responses' or 'chat_completions'.
       //      This is our canonical path for streaming the final answer.
       //   2. { data: { type: 'model', event: { type: 'response.*', ... } } }
-      //      Responses-API raw events — carry reasoning summaries + the
+      //      Responses-API raw events, carry reasoning summaries + the
       //      duplicate of the text delta. We unwrap to read reasoning,
       //      and DROP the text duplicate (#1 already handled it).
       // The reasoning fields only exist on the Responses API; chat-
@@ -244,7 +244,7 @@ export async function streamAgentTurn(args: {
           event?: { type?: string; delta?: string; text?: string };
         };
 
-        // SDK-normalized text delta — fires on every token for both APIs.
+        // SDK-normalized text delta, fires on every token for both APIs.
         if (data.type === 'output_text_delta' && typeof data.delta === 'string' && data.delta.length > 0) {
           const delta = fixMojibake(data.delta);
           if (!sawFinalDelta) {
@@ -258,7 +258,7 @@ export async function streamAgentTurn(args: {
           continue;
         }
 
-        // `model`-wrapped Responses-API events — read reasoning fields,
+        // `model`-wrapped Responses-API events, read reasoning fields,
         // drop the duplicate output_text.delta (handled above).
         const inner = data.type === 'model' ? data.event ?? data : data;
         const t = inner.type;
@@ -281,7 +281,7 @@ export async function streamAgentTurn(args: {
             text,
           });
         }
-        // response.output_text.delta is intentionally NOT handled here —
+        // response.output_text.delta is intentionally NOT handled here, 
         // the SDK-normalized output_text_delta above already streamed it.
         continue;
       }
@@ -342,13 +342,13 @@ export async function streamAgentTurn(args: {
     }
     await stream.completed;
 
-    // Loud diagnostic line — every successful loop logs what it actually
+    // Loud diagnostic line, every successful loop logs what it actually
     // emitted. When the bubble shows "no response", look for this line:
     // a zero finalText_len + zero tool_outputs + zero deltas means the
     // model returned without ever calling tools or speaking, which is
     // almost always a system-prompt or tool-spec misconfiguration.
     console.debug(
-      `[agent-stream] runAgent completed — finalText_len=${finalText.length}, thinking=${thinking.length}, saw_final_delta=${sawFinalDelta}, saw_tool_output=${sawToolOutput}, elapsed_ms=${runStartMs ? Date.now() - runStartMs : 0}`,
+      `[agent-stream] runAgent completed, finalText_len=${finalText.length}, thinking=${thinking.length}, saw_final_delta=${sawFinalDelta}, saw_tool_output=${sawToolOutput}, elapsed_ms=${runStartMs ? Date.now() - runStartMs : 0}`,
     );
 
     // withSpan auto-ends the span when the callback returns; we just set
@@ -370,7 +370,7 @@ export async function streamAgentTurn(args: {
       response?: { status?: number; headers?: unknown; body?: unknown };
       headers?: unknown;
     };
-    // Abort path — user clicked Stop OR the client disconnected (refresh,
+    // Abort path, user clicked Stop OR the client disconnected (refresh,
     // tab close, navigation). The SDK propagates the AbortSignal as an
     // AbortError. We DON'T flag the span as error; this is a clean cancel
     // not a failure. Caller persists assistant row with canceled=true.
@@ -379,7 +379,7 @@ export async function streamAgentTurn(args: {
         `[agent-stream] aborted at +${runStartMs ? Date.now() - runStartMs : 0}ms (finalText_len=${finalText.length}, thinking=${thinking.length})`,
       );
       caughtCanceled = true;
-      // Don't sseError — the client either already left (disconnect) or
+      // Don't sseError, the client either already left (disconnect) or
       // already knows it stopped (Stop button). No useful UI signal here.
       return {
         finalText: finalText || null,
@@ -426,7 +426,7 @@ export async function streamAgentTurn(args: {
 
     // Prefer the model-server's actual error message (captured by the fetch
     // shim) over the SDK's stripped "400 status code (no body)". This is
-    // what the user sees in the chat error bubble — make it actionable.
+    // what the user sees in the chat error bubble, make it actionable.
     const detail = modelError.current;
     if (detail) {
       const friendly = detail.message
@@ -449,7 +449,7 @@ export async function streamAgentTurn(args: {
       };
     },
     {
-      name: 'refundops.turn',
+      name: 'plantfloor.turn',
       spanType: mlflow.SpanType.AGENT,
       inputs: { user_input: userInput, history_len: messages.length },
     },

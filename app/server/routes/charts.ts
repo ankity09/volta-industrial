@@ -11,7 +11,7 @@
  *
  * (We bind them as PARAMETERS rather than pass catalog/schema as statement
  * session context because the IDENTIFIER() form is what the type-generator can
- * resolve at DESCRIBE time — keeping runtime + typegen on the same mechanism,
+ * resolve at DESCRIBE time, keeping runtime + typegen on the same mechanism,
  * so generated chart types stay accurate instead of degrading to `unknown`.)
  *
  * The client (AnalyticsView) fetches `/api/charts/<key>` and feeds the rows
@@ -27,7 +27,7 @@ import { sql as sqlParam } from '@databricks/appkit';
 // name (`data`). The column type manifest is a sibling of `.result` and is
 // NOT returned, so we coerce numerics heuristically below.
 //
-// `parameters` are appkit SQL type markers (sql.string(...) etc.) — bound as
+// `parameters` are appkit SQL type markers (sql.string(...) etc.), bound as
 // named SQL params. We type the value as the marker shape so the call wired
 // in server.ts (which forwards to appkit.analytics.query) typechecks.
 type SqlMarker = ReturnType<typeof sqlParam.string>;
@@ -40,7 +40,7 @@ type AnalyticsQuery = (
 
 // The SQL statement API serializes every cell as a string, including
 // numerics, and the analytics plugin's query() drops the column-type
-// manifest — so coerce a value to a number only when it's a clean numeric
+// manifest, so coerce a value to a number only when it's a clean numeric
 // string (optional sign, digits, optional decimal). This leaves dimension
 // strings (product names, lot ids, regions) and ISO timestamps (which
 // contain '-'/'T'/':') untouched, while turning SUM/COUNT/rate aggregates
@@ -55,7 +55,7 @@ function coerce(value: unknown): unknown {
 }
 
 interface ChartsDeps {
-  /** appkit.analytics.query — runs SQL against the SQL warehouse. */
+  /** appkit.analytics.query, runs SQL against the SQL warehouse. */
   query: AnalyticsQuery;
   /** Demo catalog + schema (from appConfig.data → env). */
   catalog: string;
@@ -64,12 +64,13 @@ interface ChartsDeps {
   queriesDir: string;
 }
 
-// Query key → filename. Only these keys are runnable (closed allowlist —
-// no arbitrary file reads from a user-supplied key).
+// Query key → filename. Only these keys are runnable (closed allowlist, 
+// no arbitrary file reads from a user-supplied key). Volta plant-floor
+// analytics, the charts on client/src/analytics/AnalyticsView.tsx.
 const QUERY_FILES: Record<string, string> = {
-  daily_refund_trend: 'daily_refund_trend.sql',
-  returns_by_product: 'returns_by_product.sql',
-  worst_lots: 'worst_lots.sql',
+  vibration_trend: 'vibration_trend.sql',
+  highest_exposure_lines: 'highest_exposure_lines.sql',
+  risk_mix_by_plant: 'risk_mix_by_plant.sql',
 };
 
 export function registerChartRoutes(app: Application, deps: ChartsDeps): void {
