@@ -1,5 +1,5 @@
 {
-  "short_description": "Volta Industrial \u2014 a heavy-equipment maker's downtime-and-maintenance rescue. Machine telemetry pushed a cluster of production lines into elevated failure risk with parts that would need expediting, faster than the nightly report could surface. A plant-floor app reads governed telemetry at low latency, a maintenance recommendation ranks the move (pull now / run to shift end / expedite parts and run) per at-risk line against downtime cost, and a plant lead approves \u2014 turning governed lakehouse data into a floor action, scoped to one plant, with the assistant's AI spend capped and predictable per plant across the fleet.",
+  "short_description": "Volta Industrial — a heavy-equipment maker's downtime-and-maintenance rescue. Machine telemetry pushed a cluster of production lines into elevated failure risk with parts that would need expediting, faster than the nightly report could surface. A plant-floor app reads governed telemetry at low latency, a maintenance recommendation ranks the move (pull now / run to shift end / expedite parts and run) per at-risk line against downtime cost, and a plant lead approves — turning governed lakehouse data into a floor action, scoped to one plant, with the assistant's AI spend capped and predictable per plant across the fleet.",
   "capabilities": {
     "buildable": [
       "synthetic-data-gen",
@@ -21,5 +21,9 @@
       "genie-code"
     ]
   },
-  "created_resources": {}
+  "created_resources": {
+    "metric_view_name": "predictive_maintainers_catalog.volta.mv_line_risk",
+    "genie_space_id": "01f1a246c81a1a9983f09f5f6ddcf2ea",
+    "dashboard_id": "01f1a24f525b1c7faed01d624cde60c6"
+  }
 }

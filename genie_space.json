@@ -1,0 +1,128 @@
+{
+  "version": 2,
+  "config": {
+    "sample_questions": [
+      {"id": "10000000000000000000000000000001", "question": ["What's our downtime exposure right now, and how many open work orders?"]},
+      {"id": "10000000000000000000000000000002", "question": ["Which plants is the failure risk concentrated in?"]},
+      {"id": "10000000000000000000000000000003", "question": ["What do these at-risk lines have in common?"]},
+      {"id": "10000000000000000000000000000004", "question": ["LINE-04 is trending toward a stop. How bad is it, and is the part in stock?"]},
+      {"id": "10000000000000000000000000000005", "question": ["Should we pull LINE-04 now or run it to the end of the shift?"]},
+      {"id": "10000000000000000000000000000006", "question": ["Across all at-risk lines, how much downtime cost could we avoid, and by which action?"]},
+      {"id": "10000000000000000000000000000007", "question": ["Which lines are best served by expediting the part instead of pulling?"]}
+    ]
+  },
+  "data_sources": {
+    "tables": [
+      {"identifier": "predictive_maintainers_catalog.volta.gold_line_status"},
+      {"identifier": "predictive_maintainers_catalog.volta.gold_maintenance_recommendations"},
+      {"identifier": "predictive_maintainers_catalog.volta.gold_open_atrisk"},
+      {"identifier": "predictive_maintainers_catalog.volta.mv_line_risk"},
+      {"identifier": "predictive_maintainers_catalog.volta.raw_lines"},
+      {"identifier": "predictive_maintainers_catalog.volta.raw_parts"}
+    ]
+  },
+  "instructions": {
+    "example_question_sqls": [
+      {
+        "id": "20000000000000000000000000000001",
+        "question": ["What's our downtime exposure right now, and how many open work orders?"],
+        "sql": [
+          "SELECT MEASURE(`downtime_exposure`) AS downtime_exposure_usd,\n",
+          "       MEASURE(`open_work_orders`)  AS open_work_orders\n",
+          "FROM predictive_maintainers_catalog.volta.mv_line_risk"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000002",
+        "question": ["Which plants is the failure risk concentrated in?"],
+        "sql": [
+          "SELECT plant_id,\n",
+          "       MEASURE(`atrisk_count`)   AS atrisk_lines,\n",
+          "       MEASURE(`critical_count`) AS critical_lines\n",
+          "FROM predictive_maintainers_catalog.volta.mv_line_risk\n",
+          "GROUP BY plant_id\n",
+          "ORDER BY atrisk_lines DESC"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000003",
+        "question": ["What do these at-risk lines have in common?"],
+        "sql": [
+          "SELECT machine_type, risk_band,\n",
+          "       COUNT(*) AS lines,\n",
+          "       ROUND(AVG(vibration_rms), 2) AS avg_vibration,\n",
+          "       ROUND(AVG(temperature_c), 1) AS avg_temperature_c,\n",
+          "       SUM(open_wo_count) AS open_work_orders\n",
+          "FROM predictive_maintainers_catalog.volta.gold_line_status\n",
+          "WHERE risk_band IN ('critical','elevated')\n",
+          "GROUP BY machine_type, risk_band\n",
+          "ORDER BY lines DESC"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000004",
+        "question": ["LINE-04 is trending toward a stop. How bad is it, and is the part in stock?"],
+        "sql": [
+          "SELECT line_id, plant_id, machine_type, failure_risk_score,\n",
+          "       downtime_exposure_usd, open_wo_count, part_local,\n",
+          "       candidate_part_id, part_lead_time_days, part_unit_cost_usd\n",
+          "FROM predictive_maintainers_catalog.volta.gold_open_atrisk\n",
+          "WHERE line_id = 'LINE-0004'"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000005",
+        "question": ["Should we pull LINE-04 now or run it to the end of the shift?"],
+        "sql": [
+          "SELECT line_id, recommended_action,\n",
+          "       predicted_downtime_cost_avoided_usd, predicted_net_value_usd,\n",
+          "       action_ranking\n",
+          "FROM predictive_maintainers_catalog.volta.gold_maintenance_recommendations\n",
+          "WHERE line_id = 'LINE-0004'"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000006",
+        "question": ["Across all at-risk lines, how much downtime cost could we avoid, and by which action?"],
+        "sql": [
+          "SELECT recommended_action,\n",
+          "       COUNT(*) AS lines,\n",
+          "       ROUND(SUM(predicted_downtime_cost_avoided_usd), 0) AS total_downtime_cost_avoided_usd\n",
+          "FROM predictive_maintainers_catalog.volta.gold_maintenance_recommendations\n",
+          "GROUP BY recommended_action\n",
+          "ORDER BY total_downtime_cost_avoided_usd DESC"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000007",
+        "question": ["Which lines are best served by expediting the part instead of pulling?"],
+        "sql": [
+          "SELECT r.line_id, a.plant_id, a.machine_type, a.failure_risk_score,\n",
+          "       a.part_local, a.part_lead_time_days,\n",
+          "       r.predicted_downtime_cost_avoided_usd, r.predicted_net_value_usd\n",
+          "FROM predictive_maintainers_catalog.volta.gold_maintenance_recommendations r\n",
+          "JOIN predictive_maintainers_catalog.volta.gold_open_atrisk a USING (line_id)\n",
+          "WHERE r.recommended_action = 'expedite_parts_and_run'\n",
+          "ORDER BY r.predicted_net_value_usd DESC"
+        ]
+      }
+    ],
+    "text_instructions": [
+      {
+        "id": "30000000000000000000000000000001",
+        "content": [
+          "You analyze Volta Industrial plant-floor data for Sam Ortiz (VP Manufacturing Operations, non-technical).\n\n",
+          "WHAT HAPPENED: A high-utilization run about 3 weeks ago wore a cluster of production lines toward failure. Rising vibration and temperature telemetry, open corrective work orders, and parts that would need expediting if a line stops unplanned. About 90 critical lines across 8 plants, while the rest of the roughly 1,200-line fleet runs to plan. Unplanned downtime costs about $22K per hour.\n\n",
+          "WHAT TO HELP SAM DO: Surface where the risk is, explain why a line is flagged, and prescribe the right maintenance move (pull now, run to shift end, or expedite parts and run) against downtime cost. The hero is LINE-04 at PLANT-03 (Ohio).\n\n",
+          "TONE: Plain language, decision-first. Lead with the number and the recommended action, not the query.\n\n",
+          "BASELINES: A healthy line sits at failure_risk_score about 0.03 to 0.2 with vibration in-band. risk_band is the single signal: 'critical' (risk >= 0.75 with an open corrective WO), 'elevated' (>= 0.6), 'watch' (>= 0.4), 'healthy'. The part_local flag decides which plays are viable: expedite_parts_and_run only nets positive value when the part is stocked LOCALLY (short lead time), that is a moderate-risk line's play. For a high-risk line whose part is NON-local (like LINE-04's roughly 14-day lead time), expedite is the weakest option and pull_now wins. Never present the three actions as co-equal.\n\n",
+          "HEADLINE NUMBERS, always answer from mv_line_risk: 'What's our downtime exposure?' uses MEASURE(downtime_exposure). 'How many open work orders?' uses MEASURE(open_work_orders). 'How many lines are critical?' uses MEASURE(critical_count). mv_line_risk is a metric view, so wrap every measure in MEASURE() and GROUP BY the dimensions (plant_id, machine_type, risk_band, criticality, line_id).\n\n",
+          "INVESTIGATION FLOW for 'which lines are trending to a stop and why?': 1) mv_line_risk MEASURE(critical_count) + MEASURE(atrisk_count) by plant_id to see where the risk is. 2) gold_line_status grouped by plant_id, risk_band to show the at-risk cluster on rising vibration/temperature with open corrective WOs. 3) gold_open_atrisk WHERE line_id='LINE-0004' for the hero: high risk, part not local. 4) gold_maintenance_recommendations for the recommended action plus predicted downtime cost avoided. Conclude, then suggest: 'Want me to rank the action for LINE-04?'\n\n",
+          "ACTION FOLLOW-UPS: 'What should we do about LINE-04?' -> gold_maintenance_recommendations for that line -> recommended_action + predicted_downtime_cost_avoided_usd + the action_ranking options. LINE-04's part is non-local, so pull_now wins and expedite is the weakest play, say so. 'When does expediting make sense?' -> expedite_parts_and_run wins only on moderate-risk lines whose part is stocked locally (part_local = true); for a high-risk, non-local line, pull now. 'How much downtime cost could we avoid across all at-risk lines?' -> SUM(predicted_downtime_cost_avoided_usd). 'How many lines should we pull now vs expedite?' -> GROUP BY recommended_action.\n\n",
+          "ID NOTE: line ids are stored as 'LINE-0004' (zero-padded). When a user types 'LINE-04', match it to 'LINE-0004'.\n\n",
+          "TABLE GUIDE: mv_line_risk = governed headline metrics (exposure, open WOs, at-risk/critical counts). gold_line_status = per-line current position (telemetry, WO backlog, failure_risk_score, risk_band, geo) for scatter and plant/machine rollups. gold_open_atrisk = current at-risk lines with parts context (part_local, lead time, cost). gold_maintenance_recommendations = the ranked action per line with predicted downtime cost avoided and net value. raw_parts = parts catalog with local stock and a searchable description. raw_lines = line master with plant and geo."
+        ]
+      }
+    ]
+  }
+}
