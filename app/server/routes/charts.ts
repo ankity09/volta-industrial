@@ -71,6 +71,10 @@ const QUERY_FILES: Record<string, string> = {
   vibration_trend: 'vibration_trend.sql',
   highest_exposure_lines: 'highest_exposure_lines.sql',
   risk_mix_by_plant: 'risk_mix_by_plant.sql',
+  // Client key stays `worst_lots` (the Analytics card's fetch key); it now
+  // resolves to the maintenance-outcomes query since this schema has no
+  // product-lots/returns data — that row shape was an origin-template leftover.
+  worst_lots: 'worst_maintenance_outcomes.sql',
 };
 
 export function registerChartRoutes(app: Application, deps: ChartsDeps): void {

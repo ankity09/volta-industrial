@@ -144,11 +144,11 @@ export function AnalyticsView() {
 
         <FacilityPanel />
 
-        <ChartCard title="Worst production lots" scope="By return rate" flush>
+        <ChartCard title="Worst maintenance outcomes" scope="By net loss" flush>
           {/* Desktop / tablet: compact custom table — appkit's DataTable
               auto-mode gives wide auto-sized columns; we want a denser
-              layout where Region + Returns + Rate + Refund fit without
-              overflow. Phone-only card list lives in WorstLotsMobile. */}
+              layout where the outcome columns fit without overflow.
+              Phone-only card list lives in WorstLotsMobile. */}
           <div className="hidden sm:block">
             <WorstLotsTable />
           </div>
@@ -238,29 +238,40 @@ function ChartData({
 }
 
 /**
- * worst_lots — phone card list + desktop dense table.
+ * worst_lots (client key) — worst maintenance OUTCOMES: phone card list +
+ * desktop dense table. Backed by gold_maintenance_outcomes, ranked by
+ * net_loss_usd (action cost minus downtime cost avoided) — the calls where
+ * money was spent but little/no unplanned downtime was averted.
  *
- * Both renderers share the query (one fetch), the row shape, the
- * severity thresholds, and the loading/error/empty states. The only
- * thing that varies between desktop and mobile is the row layout.
+ * Both renderers share the query (one fetch), the row shape, the severity
+ * thresholds, and the loading/error/empty states. The only thing that varies
+ * between desktop and mobile is the row layout.
  */
 type WorstLotRow = {
-  lot_id: string;
-  product_name: string | null;
-  facility: string | null;
-  region: string | null;
-  return_count: number;
-  units_sold: number;
-  return_rate_pct: number;
-  total_refund_usd: number;
+  event_id: string;
+  line_id: string;
+  action_type: string;
+  criticality: string | null;
+  risk_at_action: number;
+  downtime_hours: number;
+  action_cost_usd: number;
+  downtime_cost_avoided_usd: number;
+  net_loss_usd: number;
+  avoided_unplanned_stop: boolean;
 };
 
-/** Color the rate by severity. Uses --severity-* tokens so a re-theme
- *  picks them up; thresholds are hardcoded business logic. */
-function rateToneClass(pct: number): string {
-  if (pct >= 20) return 'text-[var(--severity-danger)]';
-  if (pct >= 10) return 'text-[var(--severity-warning)]';
+/** Color the net loss by severity. Uses --severity-* tokens so a re-theme
+ *  picks them up; thresholds are hardcoded business logic (USD). */
+function lossToneClass(usd: number): string {
+  if (usd >= 50000) return 'text-[var(--severity-danger)]';
+  if (usd >= 15000) return 'text-[var(--severity-warning)]';
   return 'text-foreground';
+}
+
+/** Humanize the action_type enum (pull_now → Pull now). */
+function actionLabel(a: string): string {
+  const s = a.replace(/_/g, ' ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 const compactUsd = (n: number) =>
@@ -306,37 +317,47 @@ function WorstLotsMobile() {
   return (
     <ul className="divide-y divide-border">
       {r.data.map((row) => (
-        <li key={row.lot_id} className="px-4 py-3">
+        <li key={row.event_id} className="px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="font-mono text-xs text-muted-foreground">
-                {row.lot_id}
+                {row.line_id}
               </div>
               <div className="text-sm font-medium truncate mt-0.5">
-                {row.product_name ?? '—'}
+                {actionLabel(row.action_type)}
               </div>
               <div className="text-xs text-muted-foreground mt-0.5">
-                {[row.facility, row.region].filter(Boolean).join(' · ') || '—'}
+                {[
+                  row.criticality ? `${row.criticality} criticality` : null,
+                  `${(row.risk_at_action * 100).toFixed(0)}% risk at action`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </div>
             </div>
             <div className="shrink-0 text-right">
               <div
-                className={`display text-xl font-semibold ${rateToneClass(row.return_rate_pct)}`}
+                className={`display text-xl font-semibold ${lossToneClass(row.net_loss_usd)}`}
               >
-                {row.return_rate_pct}%
+                {compactUsd(row.net_loss_usd)}
               </div>
               <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                return rate
+                net loss
               </div>
             </div>
           </div>
           <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
             <span>
-              {row.return_count.toLocaleString()} returned ·{' '}
-              {row.units_sold.toLocaleString()} sold
+              {row.downtime_hours}h down · {compactUsd(row.action_cost_usd)} spent
             </span>
-            <span className="font-mono text-foreground">
-              {compactUsd(row.total_refund_usd)}
+            <span
+              className={
+                row.avoided_unplanned_stop
+                  ? 'text-[var(--severity-success,inherit)]'
+                  : 'text-[var(--severity-danger)]'
+              }
+            >
+              {row.avoided_unplanned_stop ? 'Stop avoided' : 'No stop avoided'}
             </span>
           </div>
         </li>
@@ -353,38 +374,44 @@ function WorstLotsTable() {
       <table className="w-full text-sm tabular-nums">
         <thead className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground">
           <tr className="border-b border-border">
-            <th className="text-left font-medium px-3 py-2">Lot</th>
-            <th className="text-left font-medium px-3 py-2">Product</th>
-            <th className="text-left font-medium px-3 py-2">Facility</th>
-            <th className="text-left font-medium px-3 py-2">Region</th>
-            <th className="text-right font-medium px-3 py-2">Returns</th>
-            <th className="text-right font-medium px-3 py-2">Rate</th>
-            <th className="text-right font-medium px-3 py-2">Refund</th>
+            <th className="text-left font-medium px-3 py-2">Line</th>
+            <th className="text-left font-medium px-3 py-2">Action</th>
+            <th className="text-left font-medium px-3 py-2">Criticality</th>
+            <th className="text-right font-medium px-3 py-2">Downtime</th>
+            <th className="text-right font-medium px-3 py-2">Cost</th>
+            <th className="text-right font-medium px-3 py-2">Net loss</th>
+            <th className="text-left font-medium px-3 py-2">Outcome</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
           {r.data.map((row) => (
-            <tr key={row.lot_id} className="hover:bg-muted/40">
-              <td className="px-3 py-2 font-mono text-xs">{row.lot_id}</td>
-              <td className="px-3 py-2 truncate max-w-[14rem]">
-                {row.product_name ?? '—'}
+            <tr key={row.event_id} className="hover:bg-muted/40">
+              <td className="px-3 py-2 font-mono text-xs">{row.line_id}</td>
+              <td className="px-3 py-2 truncate max-w-[12rem]">
+                {actionLabel(row.action_type)}
               </td>
-              <td className="px-3 py-2 text-muted-foreground">
-                {row.facility ?? '—'}
+              <td className="px-3 py-2 text-muted-foreground capitalize">
+                {row.criticality ?? '—'}
               </td>
-              <td className="px-3 py-2 text-muted-foreground">
-                {row.region ?? '—'}
-              </td>
-              <td className="px-3 py-2 text-right">
-                {row.return_count.toLocaleString()}
+              <td className="px-3 py-2 text-right">{row.downtime_hours}h</td>
+              <td className="px-3 py-2 text-right font-mono">
+                {compactUsd(row.action_cost_usd)}
               </td>
               <td
-                className={`px-3 py-2 text-right font-semibold ${rateToneClass(row.return_rate_pct)}`}
+                className={`px-3 py-2 text-right font-semibold font-mono ${lossToneClass(row.net_loss_usd)}`}
               >
-                {row.return_rate_pct}%
+                {compactUsd(row.net_loss_usd)}
               </td>
-              <td className="px-3 py-2 text-right font-mono">
-                {compactUsd(row.total_refund_usd)}
+              <td className="px-3 py-2">
+                <span
+                  className={
+                    row.avoided_unplanned_stop
+                      ? 'text-muted-foreground'
+                      : 'text-[var(--severity-danger)]'
+                  }
+                >
+                  {row.avoided_unplanned_stop ? 'Stop avoided' : 'No stop avoided'}
+                </span>
               </td>
             </tr>
           ))}
