@@ -105,17 +105,17 @@ export function AnalyticsView() {
         {/* Top row: two charts side-by-side. Trend (wider) + product mix. */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
           <ChartCard
-            title="Daily refund value"
-            scope="Last 30 days"
+            title="Vibration trend — at-risk lines vs fleet"
+            scope="Last 8 weeks"
             className="lg:col-span-3"
           >
-            <ChartData chartKey="daily_refund_trend" height={260}>
+            <ChartData chartKey="vibration_trend" height={260}>
               {(rows) => (
                 <LineChart
                   data={rows}
-                  xKey="return_date"
-                  yKey="total_refund_usd"
-                  colors={[BRAND_PALETTE[0]]}
+                  xKey="week"
+                  yKey={['affected_vibration_rms', 'fleet_vibration_rms']}
+                  colors={[BRAND_PALETTE[0], BRAND_PALETTE[1]]}
                   height={260}
                   smooth
                 />
@@ -124,16 +124,16 @@ export function AnalyticsView() {
           </ChartCard>
 
           <ChartCard
-            title="Top products by returns"
-            scope="All time"
+            title="Top lines by downtime exposure"
+            scope="Critical & elevated"
             className="lg:col-span-2"
           >
-            <ChartData chartKey="returns_by_product" height={260}>
+            <ChartData chartKey="highest_exposure_lines" height={260}>
               {(rows) => (
                 <BarChart
                   data={rows}
-                  xKey="product_name"
-                  yKey="return_count"
+                  xKey="line_id"
+                  yKey="downtime_exposure_usd"
                   colors={[BRAND_PALETTE[0]]}
                   height={260}
                 />
