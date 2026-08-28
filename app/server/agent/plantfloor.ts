@@ -43,7 +43,7 @@ import type { Tool } from '@openai/agents';
 import { loggedTool as tool } from './tools/logged-tool.js';
 import * as mlflow from 'mlflow-tracing';
 import { z } from 'zod';
-import { authHeaders } from '../lib/auth.js';
+import { authHeaders, servicePrincipalBearer } from '../lib/auth.js';
 import type { AppDb } from '../db/index.js';
 import {
   worstAtriskLine,
@@ -342,6 +342,15 @@ export async function configureAgentsSdk(ctx: AgentContext): Promise<void> {
   // fresh bearer. (setDefaultOpenAIClient is idempotent.)
   const headers = await authHeaders(ctx.req);
   const bearer = headers.get('Authorization')?.replace(/^Bearer /, '') ?? '';
+  // Is `bearer` the forwarded OBO USER token? If so it can expire mid-session
+  // (the Apps proxy hands us a ~1h user token and doesn't reliably refresh it),
+  // and the gateway 401s with "The access token expired". When that happens we
+  // fall back to the app SERVICE-PRINCIPAL token (see the fetch shim below).
+  // We only need the fallback for the user-token path; if authHeaders already
+  // resolved SP creds (local/dev), there's nothing to fall back to.
+  const usingUserToken = !!ctx.req.headers['x-forwarded-access-token'];
+  // Minted lazily on the first 401/403 and reused for the rest of the turn.
+  let spBearer: string | null = null;
   // NOTE: we used to wrap with mlflow-openai's `tracedOpenAI()`, but its
   // wrapper `await`s the response to snapshot outputs, which breaks
   // streaming responses. Skip it; we still get agent-level spans via the
@@ -484,6 +493,45 @@ export async function configureAgentsSdk(ctx: AgentContext): Promise<void> {
       console.debug(
         `[openai-shim] ← ${resp.status} ${resp.statusText} from ${url} in ${Date.now() - tShim}ms (content-type: ${resp.headers.get('content-type') ?? '?'})`,
       );
+      // ── OBO-token-expired fallback (mirrors the F5 scaffold's Gotcha #29) ──
+      // The forwarded OBO user token can be expired ON ARRIVAL: the Apps proxy
+      // hands the container a short-lived (~1h) user token and does NOT reliably
+      // refresh it, so a long-lived tab (or a re-synced identity) yields a token
+      // the gateway rejects with `401 invalid_token "The access token expired"`
+      // (occasionally 403 on a scope race). When that happens, mint the app
+      // SERVICE-PRINCIPAL token once and retry the SAME request with it. The
+      // gateway call still carries the `user=<email>` request tag set above, so
+      // per-user attribution survives. Retry AT MOST once (spBearer memoized for
+      // the turn); the OpenAI SDK does not itself retry 401/403, so this shim is
+      // the right place to recover before the error ever reaches the agent loop.
+      if ((resp.status === 401 || resp.status === 403) && usingUserToken) {
+        if (!spBearer) spBearer = await servicePrincipalBearer();
+        if (spBearer) {
+          console.warn(
+            `[openai-shim] ${resp.status} with forwarded user token — retrying with app service-principal token`,
+          );
+          headers.set('Authorization', `Bearer ${spBearer}`);
+          try {
+            resp = await fetch(input as Parameters<typeof fetch>[0], {
+              ...init,
+              headers,
+              body,
+              keepalive: false,
+            });
+            console.debug(
+              `[openai-shim] ← (SP-retry) ${resp.status} ${resp.statusText} from ${url} in ${Date.now() - tShim}ms`,
+            );
+          } catch (e) {
+            console.error('[openai-shim] SP-retry fetch threw', { url, error: e });
+            throw e;
+          }
+        } else {
+          console.error(
+            '[openai-shim] user token rejected AND no SP creds available ' +
+              '(DATABRICKS_CLIENT_ID/DATABRICKS_CLIENT_SECRET missing) — cannot fall back',
+          );
+        }
+      }
       if (!resp.ok) {
         try {
           const text = await resp.clone().text();

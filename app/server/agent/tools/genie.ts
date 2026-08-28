@@ -30,7 +30,7 @@
 import { loggedTool as tool } from './logged-tool.js';
 import * as mlflow from 'mlflow-tracing';
 import { z } from 'zod';
-import { authHeaders } from '../../lib/auth.js';
+import { authHeaders, fetchWithSpFallback } from '../../lib/auth.js';
 import type { DataCallResult, DataToolContext, ToolProgressEvent } from './types.js';
 
 /**
@@ -54,9 +54,8 @@ export async function callGenieSpace(
   // single REST POST; if the gateway hasn't replied by then, something's
   // broken upstream and waiting longer won't help.
   const startUrl = `${ctx.databricksHost}/api/2.0/genie/spaces/${spaceId}/start-conversation`;
-  const startResp = await fetch(startUrl, {
+  const startResp = await fetchWithSpFallback(ctx.req, headers, startUrl, {
     method: 'POST',
-    headers,
     signal: AbortSignal.timeout(2 * 60 * 1000),
     body: JSON.stringify({ content: question }),
   });
@@ -94,9 +93,8 @@ export async function callGenieSpace(
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     const pollHeaders = await authHeaders(ctx.req);
     pollHeaders.set('Content-Type', 'application/json');
-    const pollResp = await fetch(pollUrl, {
+    const pollResp = await fetchWithSpFallback(ctx.req, pollHeaders, pollUrl, {
       method: 'GET',
-      headers: pollHeaders,
       signal: AbortSignal.timeout(30 * 1000),
     }).catch((e) => {
       // Treat per-poll timeouts / network blips as transient — log and
