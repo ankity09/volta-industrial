@@ -76,6 +76,13 @@ export interface SceneHandle {
   onSelect(cb: (payload: SelectPayload) => void): void;
   /** Dim machines whose band !== the active one; 'all' restores full. */
   highlightRisk(band: RiskBand | 'all'): void;
+  /** Dolly the camera in (factor<1) / out (factor>1) along its view vector. */
+  zoomBy(factor: number): void;
+  /** Re-frame the whole plant (the establishing shot). The "I'm lost" button. */
+  resetView(): void;
+  /** Fly to the next critical machine, cycling through the plant's criticals.
+   *  Returns the lineId it focused, or null if the plant has no criticals. */
+  focusNextCritical(): string | null;
   resize(): void;
   dispose(): void;
 }

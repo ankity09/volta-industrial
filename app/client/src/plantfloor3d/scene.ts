@@ -91,6 +91,9 @@ interface SceneState {
   // Hero line tracking for pulse
   heroLineId: string | null;
 
+  // Round-robin cursor for focusNextCritical (index into the plant's criticals)
+  nextCriticalIdx: number;
+
   // Risk highlight
   activeRisk: RiskBand | 'all';
 
@@ -128,7 +131,7 @@ export function createScene(
   scene.background = new THREE.Color(0x0a0f1c); // deep navy
   scene.fog = new THREE.FogExp2(0x0a0f1c, 0.012);
 
-  // Camera
+  // Camera (home pose applied once controls exist — see CAM_HOME_POS below)
   const camera = new THREE.PerspectiveCamera(46, w / h, 0.1, 500);
   camera.position.set(0, 60, 90);
   camera.lookAt(0, 0, 0);
@@ -156,14 +159,27 @@ export function createScene(
   labelRenderer.domElement.style.pointerEvents = 'none';
   container.appendChild(labelRenderer.domElement);
 
-  // OrbitControls
+  // Home camera pose — the whole-plant establishing framing that resetView()
+  // returns to.
+  const CAM_HOME_POS: [number, number, number] = [0, 60, 90];
+  const CAM_HOME_TARGET: [number, number, number] = [0, 0, 0];
+
+  // OrbitControls, constrained for a "read my factory" tool rather than a free
+  // 3D sandbox: NO panning (free pan is the main way users get lost with the
+  // floor off-screen and no way back), a clamped zoom range, a floor-angle
+  // cap, and gentle damped orbit/zoom so it doesn't feel twitchy.
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
-  controls.dampingFactor = 0.05;
-  controls.maxPolarAngle = Math.PI / 2.05; // don't go under floor
-  controls.minDistance = 12;
-  controls.maxDistance = 220;
-  controls.target.set(0, 0, 0);
+  controls.dampingFactor = 0.08;
+  controls.enablePan = false; // no free pan → can't lose the floor
+  controls.enableZoom = true; // wheel/trackpad zoom (also driven by zoomBy)
+  controls.zoomSpeed = 0.9;
+  controls.rotateSpeed = 0.6; // calmer orbit
+  controls.minPolarAngle = 0.15; // don't go fully top-down
+  controls.maxPolarAngle = Math.PI / 2.05; // don't drop under the floor
+  controls.minDistance = 10;
+  controls.maxDistance = 160; // can't drift miles away
+  controls.target.set(...CAM_HOME_TARGET);
   controls.update();
 
   // Lighting
@@ -224,6 +240,7 @@ export function createScene(
     pulsedHeroId: null,
     pointerDownPos: null,
     heroLineId: null,
+    nextCriticalIdx: 0,
     activeRisk: 'all',
     reducedMotion,
     container,
@@ -575,6 +592,26 @@ export function createScene(
     return Math.max(min, Math.min(max, v));
   }
 
+  // Fly the camera to a pose. Snaps under reduced-motion, else eased tween.
+  // Shared by focusLine / resetView / focusNextCritical.
+  function tweenTo(
+    toP: [number, number, number],
+    toT: [number, number, number],
+  ): void {
+    if (state.reducedMotion) {
+      camera.position.set(...toP);
+      controls.target.set(...toT);
+      controls.update();
+      return;
+    }
+    state.camTween.active = true;
+    state.camTween.t0 = clock.getElapsedTime();
+    state.camTween.fromP = [camera.position.x, camera.position.y, camera.position.z];
+    state.camTween.fromT = [controls.target.x, controls.target.y, controls.target.z];
+    state.camTween.toP = toP;
+    state.camTween.toT = toT;
+  }
+
   function stepCamTween(t: number): void {
     if (!state.camTween.active) return;
 
@@ -676,6 +713,7 @@ export function createScene(
       disposePlant();
 
       state.heroLineId = model.heroLineId;
+      state.nextCriticalIdx = 0; // fresh critical-cycle for the new plant
 
       // Create new plant group
       state.plantGroup = new THREE.Group();
@@ -791,24 +829,58 @@ export function createScene(
 
       state.heroLineId = lineId;
 
-      const toP: [number, number, number] = [machine.model.x + 8, 8, machine.model.z + 12];
-      const toT: [number, number, number] = [machine.model.x, 1, machine.model.z];
-
-      if (state.reducedMotion) {
-        camera.position.set(...toP);
-        controls.target.set(...toT);
-        controls.update();
-      } else {
-        state.camTween.active = true;
-        state.camTween.t0 = clock.getElapsedTime();
-        state.camTween.fromP = [camera.position.x, camera.position.y, camera.position.z];
-        state.camTween.fromT = [controls.target.x, controls.target.y, controls.target.z];
-        state.camTween.toP = toP;
-        state.camTween.toT = toT;
-      }
+      tweenTo(
+        [machine.model.x + 8, 8, machine.model.z + 12],
+        [machine.model.x, 1, machine.model.z],
+      );
 
       // Show callout
       showCalloutFor(lineId);
+    },
+
+    zoomBy(factor: number): void {
+      if (state.disposed) return;
+      // Dolly the camera along its view vector toward/away from the target,
+      // clamped to the same [minDistance, maxDistance] the wheel obeys. Drives
+      // the on-screen +/- buttons so zoom works even where wheel/trackpad
+      // events are flaky.
+      const target = controls.target;
+      const offset = camera.position.clone().sub(target);
+      const dist = offset.length();
+      const next = Math.min(
+        controls.maxDistance,
+        Math.max(controls.minDistance, dist * factor),
+      );
+      offset.setLength(next);
+      camera.position.copy(target).add(offset);
+      controls.update();
+    },
+
+    resetView(): void {
+      if (state.disposed) return;
+      // Re-frame the whole plant (the establishing shot) and clear any focused
+      // hero/callout. This is the "I'm lost, get me back" escape hatch.
+      state.heroLineId = null;
+      if (state.callout) {
+        state.callout.element?.remove?.();
+        state.callout.parent?.remove(state.callout);
+        state.callout = null;
+        state.calloutLineId = null;
+      }
+      tweenTo(CAM_HOME_POS, CAM_HOME_TARGET);
+    },
+
+    focusNextCritical(): string | null {
+      if (state.disposed) return null;
+      // Cycle through the plant's critical machines in stable (mapper) order so
+      // repeated presses walk every critical line, wrapping around.
+      const criticals = state.machines.filter((m) => m.model.riskBand === 'critical');
+      if (criticals.length === 0) return null;
+      state.nextCriticalIdx = state.nextCriticalIdx % criticals.length;
+      const target = criticals[state.nextCriticalIdx];
+      state.nextCriticalIdx += 1;
+      handle.focusLine(target.lineId);
+      return target.lineId;
     },
 
     onSelect(cb: (payload: SelectPayload) => void): void {

@@ -15,7 +15,7 @@
  * fetch (LineDetailPanel.tsx). This file wires them and renders overlay chrome.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Boxes, Search, X } from 'lucide-react';
+import { Boxes, Search, X, Plus, Minus, Maximize2, AlertTriangle } from 'lucide-react';
 import { fetchLines } from '@/lib/lines';
 import { dataMutated } from '@/lib/events';
 import { RISK_BAND_COLORS } from '@/plantfloor/types';
@@ -342,9 +342,53 @@ export function PlantFloor3DView() {
         </div>
       )}
 
+      {/* Navigator: the "I'm lost / get me somewhere" controls. Reset re-frames
+          the whole plant; +/- zoom works even where wheel/trackpad is flaky;
+          Next critical flies through the plant's critical lines. */}
+      <div className="absolute bottom-4 right-4 flex flex-col items-end gap-2 pointer-events-auto">
+        <button
+          onClick={() => handleRef.current?.focusNextCritical()}
+          disabled={!model || model.counts.critical === 0}
+          className="flex items-center gap-2 h-9 rounded-lg border border-border bg-card/90 backdrop-blur px-3 text-xs font-medium text-foreground hover:border-foreground/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Fly to the next critical line"
+        >
+          <AlertTriangle className="size-3.5 text-[#E5484D]" />
+          Next critical
+        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => handleRef.current?.resetView()}
+            className="flex items-center gap-2 h-9 rounded-lg border border-border bg-card/90 backdrop-blur px-3 text-xs font-medium text-foreground hover:border-foreground/30 transition-colors"
+            title="Reset the view to the whole plant"
+          >
+            <Maximize2 className="size-3.5" />
+            Reset view
+          </button>
+          <div className="flex items-center rounded-lg border border-border bg-card/90 backdrop-blur overflow-hidden">
+            <button
+              onClick={() => handleRef.current?.zoomBy(0.8)}
+              className="grid place-items-center size-9 text-foreground hover:bg-muted transition-colors"
+              aria-label="Zoom in"
+              title="Zoom in"
+            >
+              <Plus className="size-4" />
+            </button>
+            <div className="w-px self-stretch bg-border" />
+            <button
+              onClick={() => handleRef.current?.zoomBy(1.25)}
+              className="grid place-items-center size-9 text-foreground hover:bg-muted transition-colors"
+              aria-label="Zoom out"
+              title="Zoom out"
+            >
+              <Minus className="size-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Orbit hint. */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-[11px] text-muted-foreground/70 pointer-events-none">
-        Drag to orbit, scroll to zoom, click a line for detail
+        Drag to orbit, use the controls to zoom or reset, click a line for detail
       </div>
 
       <LineDetailPanel lineId={selectedId} onClose={() => setSelectedId(null)} />
