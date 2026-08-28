@@ -1,15 +1,19 @@
 /**
- * Vanilla Three.js engine for the Volta Plant Floor 3D scene.
- * Renders a SceneModel with instanced cabinets, bay floors, and critical beams.
- * Imperative API: createScene() → SceneHandle { setLines, focusLine, onSelect, resize, dispose }
+ * Vanilla Three.js engine for the Volta Plant Floor 3D scene (v2).
+ * Renders ONE plant at a time as a cinematic factory floor: a persistent
+ * envelope (floor, walls, roof, window band, crane) built once, plus a
+ * per-plant group of ~150 procedural machines (from machines.ts) grouped into
+ * machine-type neighborhoods, with risk-driven motion and a floating callout.
+ * Imperative API: createScene() → SceneHandle
+ *   { setPlant, focusLine, onSelect, highlightRisk, resize, dispose }
  *
  * Toolchain constraints (three@0.169, ESM via three/addons/*, r169 API):
  * - import * as THREE from 'three'
  * - import addons from 'three/addons/...' (NOT three/examples/jsm/)
  * - outputColorSpace = THREE.SRGBColorSpace, shadowMap.type = THREE.PCFSoftShadowMap
  * - use OutputPass for final bloom compose pass
- * - allocation-free loops: reuse one dummy Object3D and one Color per loop
- * - performance target: 1200 cabinet instances at 60fps
+ * - allocation-free animation loop; particles only on emphasized machines
+ * - performance target: one plant (~130-167 machines) at 60fps
  */
 
 import * as THREE from 'three';
@@ -438,8 +442,8 @@ export function createScene(
 
   // Dispose a mesh's GPU resources. InstancedMesh keeps its instanceMatrix /
   // instanceColor buffers on the MESH (not the geometry), so geometry disposal
-  // alone leaks them — InstancedMesh.dispose() releases those. setLines rebuilds
-  // a fresh 1,200-instance mesh on every filter change + every dataMutated
+  // alone leaks them — InstancedMesh.dispose() releases those. setPlant rebuilds
+  // the per-plant machine group on every plant switch + every dataMutated
   // recolor, so this runs often; leaking here is a real GPU-memory drain.
   const disposeMeshResources = (obj: THREE.Object3D): void => {
     if (obj instanceof THREE.Mesh) {
