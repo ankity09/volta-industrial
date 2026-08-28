@@ -342,20 +342,23 @@ export function PlantFloor3DView() {
         </div>
       )}
 
-      {/* Navigator: the "I'm lost / get me somewhere" controls. Reset re-frames
-          the whole plant; +/- zoom works even where wheel/trackpad is flaky;
-          Next critical flies through the plant's critical lines. */}
-      <div className="absolute bottom-4 right-4 flex flex-col items-end gap-2 pointer-events-auto">
-        <button
-          onClick={() => handleRef.current?.focusNextCritical()}
-          disabled={!model || model.counts.critical === 0}
-          className="flex items-center gap-2 h-9 rounded-lg border border-border bg-card/90 backdrop-blur px-3 text-xs font-medium text-foreground hover:border-foreground/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          title="Fly to the next critical line"
-        >
-          <AlertTriangle className="size-3.5 text-[#E5484D]" />
-          Next critical
-        </button>
-        <div className="flex items-center gap-2">
+      {/* Navigator: the "I'm lost / get me somewhere" controls, as one centered
+          row along the bottom. Reset re-frames the whole plant; +/- zoom works
+          even where wheel/trackpad is flaky; Next critical flies through the
+          plant's critical lines. Centered so it clears the bottom-left legend
+          AND the bottom-right chat dock (which covers the right edge when
+          expanded). Hint sits just below it. */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 pointer-events-none">
+        <div className="flex items-center gap-2 pointer-events-auto">
+          <button
+            onClick={() => handleRef.current?.focusNextCritical()}
+            disabled={!model || model.counts.critical === 0}
+            className="flex items-center gap-2 h-9 rounded-lg border border-border bg-card/90 backdrop-blur px-3 text-xs font-medium text-foreground hover:border-foreground/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Fly to the next critical line"
+          >
+            <AlertTriangle className="size-3.5 text-[#E5484D]" />
+            Next critical
+          </button>
           <button
             onClick={() => handleRef.current?.resetView()}
             className="flex items-center gap-2 h-9 rounded-lg border border-border bg-card/90 backdrop-blur px-3 text-xs font-medium text-foreground hover:border-foreground/30 transition-colors"
@@ -384,11 +387,10 @@ export function PlantFloor3DView() {
             </button>
           </div>
         </div>
-      </div>
-
-      {/* Orbit hint. */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-[11px] text-muted-foreground/70 pointer-events-none">
-        Drag to orbit, use the controls to zoom or reset, click a line for detail
+        {/* Orbit hint. */}
+        <div className="text-[11px] text-muted-foreground/70">
+          Drag to orbit, use the controls to zoom or reset, click a line for detail
+        </div>
       </div>
 
       <LineDetailPanel lineId={selectedId} onClose={() => setSelectedId(null)} />
