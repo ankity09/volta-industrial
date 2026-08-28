@@ -35,7 +35,7 @@ npm install --include=dev --legacy-peer-deps --prefer-offline --no-audit --no-fu
 # container's runMigrations() 503s with "No Drizzle migrations folder found".
 # Generate it here so it lands next to dist/ and the DAB sync.include ships it.
 echo "[build-app] generating Drizzle migrations (db:generate)…"
-npm run db:generate
+echo "[build-app] skipping db:generate — migrations pre-generated + baselined"
 
 echo "[build-app] building server + client…"
 npm run build:source
