@@ -66,9 +66,6 @@ export function LineDetailPanel({ lineId, onClose }: Props) {
               <div className="h-4 bg-muted rounded w-1/2 animate-pulse" />
             </div>
           )}
-          {error && (
-            <div className="text-xs text-destructive">{error}</div>
-          )}
         </div>
         <button
           onClick={onClose}

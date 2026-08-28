@@ -16,7 +16,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Boxes, Search, X } from 'lucide-react';
-import { fetchLines, fetchLinesSummary } from '@/lib/lines';
+import { fetchLines } from '@/lib/lines';
 import { dataMutated } from '@/lib/events';
 import { RISK_BAND_COLORS } from '@/plantfloor/types';
 import type { LineStatus, RiskBand } from '@/shared/types';
@@ -82,8 +82,10 @@ export function PlantFloor3DView() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    Promise.all([fetchLines({}), fetchLinesSummary()])
-      .then(([lines]) => {
+    // Legend counts are derived client-side from the mapped model (model.counts),
+    // so /api/lines alone is enough — no separate summary round-trip.
+    fetchLines({})
+      .then((lines) => {
         if (cancelled) return;
         setAllLines(lines);
         setError(null);
@@ -130,12 +132,15 @@ export function PlantFloor3DView() {
     h.setLines(m);
 
     if (!didFocusRef.current && m.heroLineId) {
-      didFocusRef.current = true;
       const heroId = m.heroLineId;
-      const timer = setTimeout(
-        () => handleRef.current?.focusLine(heroId),
-        reduced ? 0 : 900,
-      );
+      const timer = setTimeout(() => {
+        // Guard flips only once the fly-in actually fires. If a filter change
+        // or a dataMutated refetch clears this timer first, the guard stays
+        // false and the next model run reschedules, so the establishing
+        // fly-in is never silently lost.
+        didFocusRef.current = true;
+        handleRef.current?.focusLine(heroId);
+      }, reduced ? 0 : 900);
       return () => clearTimeout(timer);
     }
     return undefined;
@@ -146,6 +151,11 @@ export function PlantFloor3DView() {
     [allLines],
   );
 
+  // The hero card is the on-load establishing moment: show it only in the
+  // initial unfiltered view. Once the user narrows by risk/plant, the "highest
+  // exposure line" would be recomputed against the subset, which is misleading,
+  // so we suppress it (and it does not flash back on later refetches).
+  const isUnfiltered = riskFilter === 'all' && plantFilter === null;
   const heroLine = useMemo(
     () =>
       model?.heroLineId
@@ -246,7 +256,7 @@ export function PlantFloor3DView() {
 
       {/* On-load hero risk card. Gated on heroDismissed so a later filter or
           refetch does not make it reappear or flash. */}
-      {heroLine && !heroDismissed && (
+      {heroLine && !heroDismissed && isUnfiltered && (
         <div className="absolute top-4 right-4 w-[300px] rounded-xl border border-[#E5484D]/50 bg-card/95 backdrop-blur shadow-xl pointer-events-auto">
           <div className="flex items-start justify-between px-4 pt-3">
             <div className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#E5484D]">

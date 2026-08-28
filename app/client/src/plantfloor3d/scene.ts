@@ -69,6 +69,8 @@ interface SceneState {
 
   // Hero line tracking for ambient pulse
   heroLineId: string | null;
+  // Cabinet instance index of the hero line, so stepPulse can single it out.
+  heroInstanceIndex: number | null;
 
   // Reduced motion preference
   reducedMotion: boolean;
@@ -198,12 +200,33 @@ export function createScene(
     hoveredInstanceId: null,
     pointerDownPos: null,
     heroLineId: null,
+    heroInstanceIndex: null,
     reducedMotion,
     container,
     disposed: false,
   };
 
   scene.add(state.contentGroup);
+
+  // Reused across hot paths (hover rewrites + hero pulse) so we never
+  // allocate an Object3D per pointer move or per frame.
+  const hoverDummy = new THREE.Object3D();
+  const pulseDummy = new THREE.Object3D();
+
+  // Dispose a mesh's GPU resources. InstancedMesh keeps its instanceMatrix /
+  // instanceColor buffers on the MESH (not the geometry), so geometry disposal
+  // alone leaks them — InstancedMesh.dispose() releases those. setLines rebuilds
+  // a fresh 1,200-instance mesh on every filter change + every dataMutated
+  // recolor, so this runs often; leaking here is a real GPU-memory drain.
+  const disposeMeshResources = (obj: THREE.Object3D): void => {
+    if (obj instanceof THREE.Mesh) {
+      obj.geometry?.dispose();
+      const mat = obj.material;
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else mat?.dispose();
+      if (obj instanceof THREE.InstancedMesh) obj.dispose();
+    }
+  };
 
   // --- Step 3: Raycast + pointer interaction ---
 
@@ -256,6 +279,30 @@ export function createScene(
     state.pointerDownPos = null;
   };
 
+  // Rewrite one cabinet instance's matrix, optionally with a hover pop.
+  // Reuses hoverDummy (no per-call allocation).
+  const writeCabinetMatrix = (idx: number, hovered: boolean): void => {
+    const mesh = state.cabinetMesh;
+    const inst = state.instances[idx];
+    if (!mesh || !inst) return;
+    const baseY = inst.emphasized ? 1.0 : 0.8;
+    const baseScaleY = inst.emphasized ? 1.35 : 1;
+    hoverDummy.position.set(inst.x, baseY, inst.z);
+    if (hovered) hoverDummy.scale.set(1.1, baseScaleY * 1.05, 1.1);
+    else hoverDummy.scale.set(1, baseScaleY, 1);
+    hoverDummy.updateMatrix();
+    mesh.setMatrixAt(idx, hoverDummy.matrix);
+  };
+
+  const setHover = (newHoveredId: number | null): void => {
+    if (newHoveredId === state.hoveredInstanceId || !state.cabinetMesh) return;
+    if (state.hoveredInstanceId != null) writeCabinetMatrix(state.hoveredInstanceId, false);
+    if (newHoveredId != null) writeCabinetMatrix(newHoveredId, true);
+    state.cabinetMesh.instanceMatrix.needsUpdate = true;
+    state.hoveredInstanceId = newHoveredId;
+    renderer.domElement.style.cursor = newHoveredId != null ? 'pointer' : 'default';
+  };
+
   const onPointerMove = (ev: PointerEvent) => {
     if (state.disposed || !state.cabinetMesh) return;
 
@@ -266,45 +313,20 @@ export function createScene(
     raycaster.setFromCamera(raycasterNdc, camera);
     const hits = raycaster.intersectObject(state.cabinetMesh);
 
-    const newHoveredId = hits.length > 0 && hits[0].instanceId != null ? hits[0].instanceId : null;
+    setHover(hits.length > 0 && hits[0].instanceId != null ? hits[0].instanceId : null);
+  };
 
-    if (newHoveredId !== state.hoveredInstanceId) {
-      if (state.hoveredInstanceId != null && state.cabinetMesh) {
-        // reset old hover
-        const dummy = new THREE.Object3D();
-        const inst = state.instances[state.hoveredInstanceId];
-        if (inst) {
-          dummy.position.set(inst.x, inst.emphasized ? 1.0 : 0.8, inst.z);
-          dummy.scale.set(1, inst.emphasized ? 1.35 : 1, 1);
-          dummy.updateMatrix();
-          state.cabinetMesh.setMatrixAt(state.hoveredInstanceId, dummy.matrix);
-        }
-      }
-
-      if (newHoveredId != null && state.cabinetMesh) {
-        // set new hover (scale up slightly)
-        const dummy = new THREE.Object3D();
-        const inst = state.instances[newHoveredId];
-        if (inst) {
-          dummy.position.set(inst.x, inst.emphasized ? 1.0 : 0.8, inst.z);
-          dummy.scale.set(1.1, inst.emphasized ? 1.35 * 1.05 : 1.05, 1.1);
-          dummy.updateMatrix();
-          state.cabinetMesh.setMatrixAt(newHoveredId, dummy.matrix);
-        }
-      }
-
-      if (state.cabinetMesh.instanceMatrix) {
-        state.cabinetMesh.instanceMatrix.needsUpdate = true;
-      }
-
-      state.hoveredInstanceId = newHoveredId;
-      renderer.domElement.style.cursor = newHoveredId != null ? 'pointer' : 'default';
-    }
+  // Cursor leaving the canvas (onto an overlay control or out of the window)
+  // must clear the last hover, else that cabinet stays popped until you return.
+  const onPointerLeave = () => {
+    if (state.disposed) return;
+    setHover(null);
   };
 
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
   renderer.domElement.addEventListener('pointerup', onPointerUp);
   renderer.domElement.addEventListener('pointermove', onPointerMove);
+  renderer.domElement.addEventListener('pointerleave', onPointerLeave);
 
   // --- Step 4: Camera tween helpers ---
 
@@ -348,11 +370,30 @@ export function createScene(
   // --- Animation loop ---
 
   function stepPulse(t: number): void {
-    if (!state.beamsMesh || !state.beamsMesh.material) return;
+    // Ambient shimmer across all critical beams.
+    if (state.beamsMesh?.material) {
+      (state.beamsMesh.material as THREE.MeshBasicMaterial).opacity = 0.4 + 0.25 * Math.sin(t * 3);
+    }
 
-    // Subtle pulse on beams opacity
-    const pulseFactor = 0.4 + 0.25 * Math.sin(t * 3);
-    (state.beamsMesh.material as THREE.MeshBasicMaterial).opacity = pulseFactor;
+    // Single out the hero cabinet with a stronger, breathing pop so the eye
+    // lands on the one line the camera flew to. Skipped while it is hovered
+    // (hover owns the matrix then) so the two writes don't fight.
+    const heroIdx = state.heroInstanceIndex;
+    if (
+      heroIdx != null &&
+      heroIdx !== state.hoveredInstanceId &&
+      state.cabinetMesh &&
+      state.instances[heroIdx]
+    ) {
+      const inst = state.instances[heroIdx];
+      const baseScaleY = inst.emphasized ? 1.35 : 1;
+      const pop = 1 + 0.06 * Math.sin(t * 4.5);
+      pulseDummy.position.set(inst.x, inst.emphasized ? 1.0 : 0.8, inst.z);
+      pulseDummy.scale.set(pop, baseScaleY * pop, pop);
+      pulseDummy.updateMatrix();
+      state.cabinetMesh.setMatrixAt(heroIdx, pulseDummy.matrix);
+      state.cabinetMesh.instanceMatrix.needsUpdate = true;
+    }
   }
 
   function animate(): void {
@@ -392,17 +433,8 @@ export function createScene(
       state.heroLineId = model.heroLineId;
       state.instances = model.instances;
 
-      // Dispose old content
-      state.contentGroup.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          obj.geometry?.dispose();
-          if (Array.isArray(obj.material)) {
-            obj.material.forEach((m) => m.dispose());
-          } else if (obj.material) {
-            obj.material.dispose();
-          }
-        }
-      });
+      // Dispose old content (InstancedMesh buffers included — see helper).
+      state.contentGroup.traverse(disposeMeshResources);
 
       // Remove CSS2D labels
       state.contentGroup.children.forEach((child) => {
@@ -420,6 +452,7 @@ export function createScene(
       state.instanceLineIds = [];
       state.lineIdToIndex.clear();
       state.hoveredInstanceId = null;
+      state.heroInstanceIndex = null;
 
       // --- Step 2: Build bays + cabinets ---
 
@@ -491,6 +524,10 @@ export function createScene(
 
       state.contentGroup.add(cabinetMesh);
       state.cabinetMesh = cabinetMesh;
+
+      // Cache the hero's instance index so stepPulse can single it out.
+      state.heroInstanceIndex =
+        model.heroLineId != null ? (state.lineIdToIndex.get(model.heroLineId) ?? null) : null;
 
       // Vertical beams for critical instances
       const criticalCount = model.instances.filter((i) => i.riskBand === 'critical').length;
@@ -580,20 +617,12 @@ export function createScene(
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
+      renderer.domElement.removeEventListener('pointerleave', onPointerLeave);
 
       controls.dispose();
 
-      // Dispose all geometries + materials in contentGroup
-      state.contentGroup.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          obj.geometry?.dispose();
-          if (Array.isArray(obj.material)) {
-            obj.material.forEach((m) => m.dispose());
-          } else if (obj.material) {
-            obj.material.dispose();
-          }
-        }
-      });
+      // Dispose all geometries + materials (InstancedMesh buffers included).
+      state.contentGroup.traverse(disposeMeshResources);
 
       // Remove CSS2D labels + clean up DOM
       state.contentGroup.children.forEach((child) => {
@@ -607,8 +636,12 @@ export function createScene(
         state.scene.remove(state.scene.children[0]);
       }
 
-      // Dispose WebGL resources
+      // Dispose WebGL resources. forceContextLoss() releases the WebGL context
+      // itself (dispose() alone leaves it on the detached canvas until GC), so
+      // repeated lazy-route mount/unmount + StrictMode double-mounts don't
+      // accumulate contexts toward the browser's ~16-context cap.
       renderer.dispose();
+      renderer.forceContextLoss();
       composer.dispose();
 
       // Remove canvases from DOM
