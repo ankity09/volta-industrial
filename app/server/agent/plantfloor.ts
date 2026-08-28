@@ -394,6 +394,16 @@ export async function configureAgentsSdk(ctx: AgentContext): Promise<void> {
     fetch: async (input, init) => {
       const headers = new Headers(init?.headers);
       headers.set('Connection', 'close');
+      // Drop the SDK's Content-Length. The OpenAI SDK sets it from the
+      // ORIGINAL request body, but this shim rewrites `body` below (strips
+      // long input[*].id + assistant-part annotations, then re-serializes),
+      // which changes the byte length. A stale Content-Length makes undici
+      // reject the request LOCALLY with UND_ERR_REQ_CONTENT_LENGTH_MISMATCH
+      // ("Request body length does not match content-length header") before
+      // it ever reaches the gateway — the turn then fails with a bare
+      // "Connection error." and the chat hangs. Deleting the header lets
+      // undici recompute the correct length from the bytes we actually send.
+      headers.delete('content-length');
       // Per-line attribution for the Unity AI Gateway inference table. Tags let
       // the gateway attribute spend + logged inferences to the plant line under
       // discussion. `lineInFocus` is set by the tools as they resolve a line;
