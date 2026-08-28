@@ -121,17 +121,26 @@ export type PartMatch = {
 };
 
 /**
- * Part search over app.parts, powering the expedite-parts play. This is the
- * Lakebase Search surface: a hybrid full-text + vector match over the parts
- * catalog's (part_name, description) fields, ranked by relevance.
+ * Part search over app.parts, powering the expedite-parts play. This retrieves
+ * from the Build-1 LAKEBASE SEARCH index — no separate vector store — so the
+ * assistant's part lookups stay inside the governed operational database.
  *
- * Implementation note: Lakebase Search's vector index over (part_name,
- * description) is provisioned in the data layer (Milestone 2 Lakebase setup,
- * see 03_DATA_MODEL.md). Until that index exists we run Postgres full-text
- * search (websearch_to_tsquery over part_name + description) with an ILIKE
- * fallback so a query still returns candidates with no ML dependency.
- * TODO(data-layer): when the vector index lands, add a similarity() clause and
- * blend it with ts_rank for true hybrid ranking.
+ * app.parts carries a `search_tsv` (tsvector) column indexed by the
+ * `lakebase_bm25` index `idx_parts_bm25`, and an `embedding` (vector) column
+ * indexed by the `lakebase_ann` index `idx_parts_ann` (cosine). We rank by the
+ * BM25 index here via the lakebase_text operator:
+ *
+ *     search_tsv <@> to_bm25query(to_tsvector('english', :q), 'app.idx_parts_bm25')
+ *
+ * The `<@>` operator returns a BM25 score where MORE NEGATIVE = more relevant
+ * (it reads as a distance), so we ORDER BY it ASC and keep the strongest
+ * (most-negative, i.e. actually-matching) rows. A row with score ~0 didn't
+ * match the query terms; we drop those with a `< 0` predicate, which the
+ * `idx_parts_bm25` index serves. An ILIKE fallback covers the empty-result
+ * case (e.g. a query with no indexed terms) so the tool always returns
+ * candidates. The ANN/embedding index is available for semantic search via
+ * `idx_parts_ann`; BM25 is the lexical surface the assistant uses for part
+ * names/types.
  */
 export async function searchParts(
   db: AppDb,
@@ -139,32 +148,43 @@ export async function searchParts(
 ): Promise<PartMatch[]> {
   const q = query.trim();
   if (!q) return [];
-  const like = `%${q}%`;
-  const result = await db.execute(sql`
+
+  // Primary: Lakebase Search BM25 over the indexed search_tsv column.
+  // NOTE: app.parts exposes `part_type` (not part_category) and tracks stock as
+  // `local_stock_qty` (not a part_local boolean); we map/derive both below.
+  const bm25 = await db.execute(sql`
     SELECT
       part_id,
       part_name,
-      part_category,
-      part_local,
+      part_type,
+      (local_stock_qty > 0) AS part_local,
       lead_time_days,
-      ts_rank(
-        to_tsvector('english', coalesce(part_name, '') || ' ' || coalesce(description, '')),
-        websearch_to_tsquery('english', ${q})
-      ) AS rank
+      (search_tsv <@> to_bm25query(to_tsvector('english', ${q}), 'app.idx_parts_bm25')) AS bm25_score
     FROM app.parts
-    WHERE
-      to_tsvector('english', coalesce(part_name, '') || ' ' || coalesce(description, ''))
-        @@ websearch_to_tsquery('english', ${q})
-      OR part_name ILIKE ${like}
-      OR description ILIKE ${like}
-    ORDER BY rank DESC NULLS LAST, part_name ASC
+    WHERE (search_tsv <@> to_bm25query(to_tsvector('english', ${q}), 'app.idx_parts_bm25')) < 0
+    ORDER BY bm25_score ASC
     LIMIT 10
   `);
-  const rows = result.rows as Array<Record<string, unknown>>;
+  let rows = bm25.rows as Array<Record<string, unknown>>;
+
+  // Fallback: if BM25 matched nothing (query had no indexed terms), fall back
+  // to an ILIKE scan so the tool still returns candidates.
+  if (rows.length === 0) {
+    const like = `%${q}%`;
+    const ilike = await db.execute(sql`
+      SELECT part_id, part_name, part_type, (local_stock_qty > 0) AS part_local, lead_time_days
+      FROM app.parts
+      WHERE part_name ILIKE ${like} OR description ILIKE ${like}
+      ORDER BY part_name ASC
+      LIMIT 10
+    `);
+    rows = ilike.rows as Array<Record<string, unknown>>;
+  }
+
   return rows.map((r) => ({
     part_id: String(r.part_id ?? ''),
     part_name: String(r.part_name ?? ''),
-    part_category: r.part_category == null ? '' : String(r.part_category),
+    part_category: r.part_type == null ? '' : String(r.part_type),
     part_local: Boolean(r.part_local),
     lead_time_days: r.lead_time_days == null ? null : Number(r.lead_time_days),
   }));

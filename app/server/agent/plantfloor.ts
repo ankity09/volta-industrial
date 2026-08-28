@@ -566,9 +566,11 @@ rank_maintenance_actions(line_id), THE ML RANKING TOOL. Read app.maintenance_rec
   expedite_parts_and_run). Quote all three in the draft; the agent picks which to
   recommend.
 
-search_parts(query), search the parts catalog via Lakebase Search over names +
-  descriptions. Returns top matches with part_id, part_name, part_category,
-  part_local, lead_time_days. Use when exploring parts or verifying availability.
+search_parts(query), search the parts catalog via the Build-1 Lakebase Search
+  BM25 index (idx_parts_bm25 over app.parts.search_tsv) — retrieval stays inside
+  the governed Lakebase, no separate vector store. Returns top matches with
+  part_id, part_name, part_category, part_local, lead_time_days. Use when
+  exploring parts or verifying availability for the expedite play.
 
 execute_maintenance_action(line_id, action_type, part_id?, drafted_work_order,
   predicted_downtime_cost_avoided_usd?), THE WRITE TOOL, APPROVAL-GATED.
