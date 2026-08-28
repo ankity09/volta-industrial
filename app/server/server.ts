@@ -77,6 +77,7 @@ import { registerConfigRoutes } from './routes/config.js';
 import { registerChatRoutes } from './routes/chat.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerChartRoutes } from './routes/charts.js';
+import { registerLinesRoutes } from './routes/lines.js';
 import { registerDevLogRoutes } from './routes/dev-log.js';
 
 // ============================================================================
@@ -490,11 +491,14 @@ await createApp({
       agentModel: appConfig.agentModel,
     },
   });
-  // The plant-floor write surface (app.work_orders_app) is driven entirely by
-  // the agent's execute_maintenance_action tool + the client's dataMutated
-  // refetch, so there are no domain CRUD routes to register here. The at-risk
-  // queue reads Lakebase through the agent tools; analytics reads Delta via
-  // the chart routes below.
+  // Plant-floor REST surface (lines / plants / parts / activity + the
+  // work-order write) that the client's fetch helpers (client/src/lib/lines.ts)
+  // call. Reads the Lakebase app.* mirror through db/queries/maintenance.ts;
+  // the work-order POST reuses the same recordMaintenanceAction write the
+  // agent's execute_maintenance_action tool uses (commits transactionally, so
+  // the client's dataMutated-driven refetch surfaces it). The at-risk queue,
+  // Home activity feed, and Analytics facility panel all read these endpoints.
+  registerLinesRoutes(app, db);
   registerAdminRoutes(app, { db, data: appConfig.data });
 
   // Analytics charts, custom route that substitutes catalog/schema into the
