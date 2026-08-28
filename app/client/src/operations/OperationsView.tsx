@@ -38,7 +38,10 @@ const PlantFloor3D = lazy(() =>
 
 export function OperationsView() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const lineFromUrl = searchParams.get('line') ?? '';
+  // Normalize a missing/empty ?line= to null. If this is '' the drawer's
+  // `open={selectedId !== null}` is true on load ('' !== null), so the
+  // slide-over opens with no id — no fetch fires, and it renders blank.
+  const lineFromUrl = searchParams.get('line') || null;
 
   const [riskFilter, setRiskFilter] = useState<RiskBand | 'all'>(
     (searchParams.get('risk') as RiskBand | null) ?? 'critical',

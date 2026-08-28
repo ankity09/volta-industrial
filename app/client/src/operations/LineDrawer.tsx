@@ -63,6 +63,15 @@ export function LineDrawer({ id, open, onOpenChange, onMutated }: Props) {
           <div className="p-8 text-muted-foreground">Loading…</div>
         )}
         {error && <div className="p-8 text-destructive">{error}</div>}
+        {/* Empty-state guard: if the drawer is open but there's no id/detail,
+            no error, and nothing loading, the three branches below would all
+            fall through and render a BLANK sheet. Show a hint instead so the
+            slide-over is never empty. */}
+        {!detail && !loading && !error && (
+          <div className="p-8 text-muted-foreground">
+            Select a line from the queue to see its detail.
+          </div>
+        )}
         {detail && (
           <>
             <SheetHeader className="px-8 pt-8 pb-4 border-b border-border">
