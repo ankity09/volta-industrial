@@ -1,18 +1,18 @@
 /**
- * Plant Floor 3D — the full-screen wow-factor tab.
+ * Plant Floor 3D v2 — one plant at a time, cinematic factory floor.
  *
  * Owns data + overlay UI and drives the imperative vanilla-Three engine
- * (scene.ts) through its SceneHandle. All ~1,200 lines from GET /api/lines
- * render as InstancedMesh cabinets across 8 plant bays, colored by risk; the
- * camera flies in to the top-exposure critical line on load; clicking a
- * cabinet opens a live Lakebase slide-over that bridges into the chat dock
- * (Assist) and the Operations drawer (Act). When the agent commits a work
- * order, the existing dataMutated bus refetches and recolors the floor in
- * place, closing the loop in 3D.
+ * (scene.ts) through its SceneHandle. Renders a SINGLE plant chosen from a
+ * required dropdown (PLANT-01 through PLANT-08), showing its ~130-167 lines as
+ * detailed neighborhoods of machines, colored by risk. The camera flies in to
+ * the top-exposure line on plant select; clicking a machine opens a live
+ * Lakebase slide-over (LineDetailPanel). Risk chips dim machines in-scene via
+ * highlightRisk. When the agent commits a work order, dataMutated refetches the
+ * current plant and recolors in place, closing the loop in 3D.
  *
  * Responsibility: orchestration only. The engine owns pixels (scene.ts); the
- * mapping owns geometry math (lines-to-scene.ts); the panel owns the detail
- * fetch (LineDetailPanel.tsx). This file wires them and renders the overlay.
+ * pure mapper owns geometry math (plant-to-scene.ts); the panel owns detail
+ * fetch (LineDetailPanel.tsx). This file wires them and renders overlay chrome.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Boxes, Search, X } from 'lucide-react';
@@ -21,9 +21,9 @@ import { dataMutated } from '@/lib/events';
 import { RISK_BAND_COLORS } from '@/plantfloor/types';
 import type { LineStatus, RiskBand } from '@/shared/types';
 import { createScene } from './scene';
-import { linesToScene } from './lines-to-scene';
+import { plantToScene } from './plant-to-scene';
 import { LineDetailPanel } from './LineDetailPanel';
-import type { SceneHandle, SceneModel } from './scene.types';
+import type { SceneHandle, PlantSceneModel } from './scene.types';
 
 const RISK_LABELS: Record<RiskBand, string> = {
   critical: 'Critical',
@@ -32,19 +32,20 @@ const RISK_LABELS: Record<RiskBand, string> = {
   healthy: 'Healthy',
 };
 const RISK_ORDER: RiskBand[] = ['critical', 'elevated', 'watch', 'healthy'];
+const PLANTS = ['PLANT-01', 'PLANT-02', 'PLANT-03', 'PLANT-04', 'PLANT-05', 'PLANT-06', 'PLANT-07', 'PLANT-08'];
 
 export function PlantFloor3DView() {
   const mountRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<SceneHandle | null>(null);
-  const didFocusRef = useRef(false);
+  const selectedPlantRef = useRef('PLANT-01');
 
   const [handle, setHandle] = useState<SceneHandle | null>(null);
-  const [allLines, setAllLines] = useState<LineStatus[]>([]);
-  const [model, setModel] = useState<SceneModel | null>(null);
+  const [selectedPlant, setSelectedPlant] = useState('PLANT-01');
+  const [lines, setLines] = useState<LineStatus[]>([]);
+  const [model, setModel] = useState<PlantSceneModel | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [heroDismissed, setHeroDismissed] = useState(false);
   const [riskFilter, setRiskFilter] = useState<RiskBand | 'all'>('all');
-  const [plantFilter, setPlantFilter] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -78,17 +79,43 @@ export function PlantFloor3DView() {
     };
   }, [reduced]);
 
-  // --- Initial fetch: all 1,200 lines (unfiltered) + the summary. ---
+  // Keep selectedPlantRef in sync for the dataMutated subscription below.
   useEffect(() => {
+    selectedPlantRef.current = selectedPlant;
+  }, [selectedPlant]);
+
+  // --- Per-plant fetch effect: when handle or selectedPlant change, fetch the plant's lines. ---
+  useEffect(() => {
+    const h = handleRef.current;
+    if (!h) return;
+
     let cancelled = false;
+    // Fly-in timer lives at effect scope so the effect cleanup can clear it.
+    // (Returning a cleanup from inside .then() does not work — the promise
+    // discards it, so a rapid plant switch would leave a stale timer firing a
+    // focusLine on the previous plant's hero.)
+    let flyTimer: ReturnType<typeof setTimeout> | undefined;
     setLoading(true);
-    // Legend counts are derived client-side from the mapped model (model.counts),
-    // so /api/lines alone is enough — no separate summary round-trip.
-    fetchLines({})
-      .then((lines) => {
+    fetchLines({ plant: selectedPlant })
+      .then((fetchedLines) => {
         if (cancelled) return;
-        setAllLines(lines);
+        setLines(fetchedLines);
+        const m = plantToScene(fetchedLines);
+        setModel(m);
+        h.setPlant(m);
+        setHeroDismissed(false);
         setError(null);
+
+        // Fly-in to the hero line (re-runs on every plant switch).
+        if (m.heroLineId) {
+          const heroId = m.heroLineId;
+          flyTimer = setTimeout(
+            () => {
+              handleRef.current?.focusLine(heroId);
+            },
+            reduced ? 0 : 900,
+          );
+        }
       })
       .catch((e) => {
         if (!cancelled) setError((e as Error).message);
@@ -96,19 +123,25 @@ export function PlantFloor3DView() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+
     return () => {
       cancelled = true;
+      if (flyTimer) clearTimeout(flyTimer);
     };
-  }, []);
+  }, [handle, selectedPlant, reduced]);
 
-  // --- Live loop: the agent commits a work order -> dataMutated -> refetch.
-  // Reads the latest handle via ref, so this subscribes once with no stale
-  // closure. Recolor only (setAllLines drives the derived effect below); we
-  // deliberately do NOT re-run the fly-in here. ---
+  // --- Live loop: the agent commits a work order -> dataMutated -> refetch current plant.
+  // Reads the latest plant via selectedPlantRef, so this subscribes once with no stale closure.
+  // Recolor only (no focusLine re-fly on a refetch). ---
   useEffect(() => {
     const unsub = dataMutated.subscribe(() => {
-      fetchLines({})
-        .then((lines) => setAllLines(lines))
+      fetchLines({ plant: selectedPlantRef.current })
+        .then((fetchedLines) => {
+          setLines(fetchedLines);
+          const m = plantToScene(fetchedLines);
+          setModel(m);
+          handleRef.current?.setPlant(m);
+        })
         .catch(() => {
           /* keep the prior frame on a transient refetch error */
         });
@@ -116,58 +149,29 @@ export function PlantFloor3DView() {
     return unsub;
   }, []);
 
-  // --- Derived: (allLines + filters) -> SceneModel -> scene. Single source of
-  // truth; the live loop and filter changes both flow through here. The
-  // one-time fly-in to the hero fires the first time data lands. ---
+  // --- Risk highlighting: call highlightRisk whenever riskFilter changes. ---
   useEffect(() => {
-    const h = handleRef.current;
-    if (!h) return;
-    const filtered = allLines.filter(
-      (l) =>
-        (riskFilter === 'all' || l.riskBand === riskFilter) &&
-        (plantFilter === null || l.plantId === plantFilter),
-    );
-    const m = linesToScene(filtered);
-    setModel(m);
-    h.setLines(m);
-
-    if (!didFocusRef.current && m.heroLineId) {
-      const heroId = m.heroLineId;
-      const timer = setTimeout(() => {
-        // Guard flips only once the fly-in actually fires. If a filter change
-        // or a dataMutated refetch clears this timer first, the guard stays
-        // false and the next model run reschedules, so the establishing
-        // fly-in is never silently lost.
-        didFocusRef.current = true;
-        handleRef.current?.focusLine(heroId);
-      }, reduced ? 0 : 900);
-      return () => clearTimeout(timer);
+    if (riskFilter === 'all') {
+      handleRef.current?.highlightRisk('all');
+    } else {
+      handleRef.current?.highlightRisk(riskFilter);
     }
-    return undefined;
-  }, [allLines, riskFilter, plantFilter, handle, reduced]);
+  }, [riskFilter]);
 
-  const plantIds = useMemo(
-    () => [...new Set(allLines.map((l) => l.plantId))].sort(),
-    [allLines],
-  );
-
-  // The hero card is the on-load establishing moment: show it only in the
-  // initial unfiltered view. Once the user narrows by risk/plant, the "highest
-  // exposure line" would be recomputed against the subset, which is misleading,
-  // so we suppress it (and it does not flash back on later refetches).
-  const isUnfiltered = riskFilter === 'all' && plantFilter === null;
+  // The hero card is per-plant and always meaningful for the selected plant,
+  // shown until the user dismisses it.
   const heroLine = useMemo(
     () =>
       model?.heroLineId
-        ? (allLines.find((l) => l.lineId === model.heroLineId) ?? null)
+        ? (lines.find((l) => l.lineId === model.heroLineId) ?? null)
         : null,
-    [model, allLines],
+    [model, lines],
   );
 
   function runSearch() {
     const q = search.trim().toLowerCase();
     if (!q) return;
-    const match = allLines.find(
+    const match = lines.find(
       (l) =>
         l.lineId.toLowerCase() === q ||
         l.lineId.toLowerCase().includes(q) ||
@@ -175,7 +179,7 @@ export function PlantFloor3DView() {
     );
     if (match) {
       handleRef.current?.focusLine(match.lineId);
-      setSelectedId(match.lineId); // keyboard-accessible selection path
+      setSelectedId(match.lineId);
     }
   }
 
@@ -185,7 +189,7 @@ export function PlantFloor3DView() {
       <div ref={mountRef} className="absolute inset-0" />
 
       {/* Initial loading skeleton (over the still-empty canvas). */}
-      {loading && allLines.length === 0 && (
+      {loading && lines.length === 0 && (
         <div className="absolute inset-0 grid place-items-center pointer-events-none">
           <div className="flex flex-col items-center gap-3 text-muted-foreground">
             <Boxes className="size-8 animate-pulse" />
@@ -206,8 +210,25 @@ export function PlantFloor3DView() {
         </div>
       )}
 
-      {/* Top-left: filters + search. Only the controls take pointer events. */}
+      {/* Top-left: plant selector (required primary nav) + risk filter chips + search. */}
       <div className="absolute top-4 left-4 flex flex-col gap-3 pointer-events-none">
+        <div className="flex items-center gap-2 pointer-events-auto">
+          <label htmlFor="plant-select" className="text-xs font-medium text-muted-foreground">
+            Plant
+          </label>
+          <select
+            id="plant-select"
+            value={selectedPlant}
+            onChange={(e) => setSelectedPlant(e.target.value)}
+            className="h-8 rounded-md border border-border bg-card/90 backdrop-blur px-2.5 text-xs font-medium text-foreground"
+          >
+            {PLANTS.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="flex flex-wrap gap-1.5 pointer-events-auto">
           <FilterChip
             label="All"
@@ -224,39 +245,23 @@ export function PlantFloor3DView() {
             />
           ))}
         </div>
-        <div className="flex items-center gap-2 pointer-events-auto">
-          <select
-            value={plantFilter ?? ''}
-            onChange={(e) => setPlantFilter(e.target.value || null)}
-            className="h-8 rounded-md border border-border bg-card/90 backdrop-blur px-2 text-xs text-foreground"
-            aria-label="Filter by plant"
-          >
-            <option value="">All plants</option>
-            {plantIds.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-          <div className="flex items-center gap-1.5 h-8 rounded-md border border-border bg-card/90 backdrop-blur px-2">
-            <Search className="size-3.5 text-muted-foreground shrink-0" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') runSearch();
-              }}
-              placeholder="Find a line, then Enter"
-              className="bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none w-40"
-              aria-label="Search a line to focus"
-            />
-          </div>
+        <div className="flex items-center gap-1.5 h-8 rounded-md border border-border bg-card/90 backdrop-blur px-2 pointer-events-auto">
+          <Search className="size-3.5 text-muted-foreground shrink-0" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') runSearch();
+            }}
+            placeholder="Find a line, then Enter"
+            className="bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none w-40"
+            aria-label="Search a line to focus"
+          />
         </div>
       </div>
 
-      {/* On-load hero risk card. Gated on heroDismissed so a later filter or
-          refetch does not make it reappear or flash. */}
-      {heroLine && !heroDismissed && isUnfiltered && (
+      {/* Per-plant hero card. Shown until dismissed. */}
+      {heroLine && !heroDismissed && (
         <div className="absolute top-4 right-4 w-[300px] rounded-xl border border-[#E5484D]/50 bg-card/95 backdrop-blur shadow-xl pointer-events-auto">
           <div className="flex items-start justify-between px-4 pt-3">
             <div className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#E5484D]">
