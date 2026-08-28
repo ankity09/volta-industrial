@@ -1,1 +1,80 @@
-[{"id":"e95eb569-df8f-4a48-9e06-2f3ad0ed23e8","line_id":"LINE-0004","action_type":"pull_now","part_id":"PART-00001","drafted_wo":"WO-A472: Pull LINE-04 (PLANT-03, Ohio) now for planned maintenance. Bearing vibration crossed 8 mm/s with bearing temp above 100C; replacement part not stocked locally (14-day lead). Pulling now avoids ~$76,560 unplanned downtime for a ~$40,000 planned-window cost.","predicted_downtime_cost_avoided_usd":76560,"status":"approved","approved_by":"ankit.yadav@databricks.com","created_at":"2026-08-27T20:26:09.611628+00:00","decided_at":"2026-08-27T20:26:09.611628+00:00"}]
+[
+    {
+        "id": 55,
+        "status": "approved",
+        "line_id": "LINE-0291",
+        "part_id": "PART-00775",
+        "priority": null,
+        "created_at": "2026-08-28T02:39:36.642003+00:00",
+        "decided_at": "2026-08-28T02:39:36.643+00:00",
+        "drafted_wo": "**Volta Production Line: Preventive Maintenance Work Order**\n\n**Line:** LINE-0291 / Line 16 (PLANT-03)  \n**Status:** Current line-status record unavailable at draft time; failure risk is critical (92.3%)  \n**Immediate Downtime Exposure:** $40,612  \n**Candidate Part:** PART-00775 (non-local, 20-day lead time)\n\n**Why Now:**  \nLINE-0291 is at critical failure risk, and the replacement part is not stocked locally. With a 20-day lead time, delaying action materially increases the chance of an unplanned stop that cannot be quickly recovered. The model indicates that continuing to run to the end of shift destroys value versus a controlled stop now.\n\n**Recommendation:**  \nML ranking favors **pull_now**. Ranked options: pull_now avoids $75,694.59 in downtime cost; expedite_parts_and_run avoids $46,505.08; run_to_shift_end avoids only $414.01 and has strongly negative net value. Because PART-00775 is non-local, expediting is weaker than an immediate controlled pull.\n\n**Action:**  \n1. Pull LINE-0291 from production immediately and open a controlled maintenance window.  \n2. Isolate power and lock out/tag out per plant procedure.  \n3. Inspect the assembly associated with PART-00775 and confirm wear/failure indicators before restart authorization.  \n4. Remove the degraded component, stage replacement planning for PART-00775, and escalate sourcing due to 20-day lead time.  \n5. Check adjacent components for secondary damage caused by continued operation risk.  \n6. Complete functional verification before restart.\n\n**Verification:**  \n- Confirm fault indicators return to normal range.  \n- Complete restart test at reduced load, then normal load.  \n- Monitor the line through the next production run and escalate immediately if abnormal vibration, temperature, or load signatures persist.\n\n**Expected Impact:**  \nControlled pull now is the highest-value option. Predicted downtime cost avoided: **$75,694.58**.",
+        "action_type": "pull_now",
+        "approved_by": "ankit.yadav@databricks.com",
+        "audit_trail": [
+            {
+                "at": "2026-08-28T02:39:36.640Z",
+                "by": "ankit.yadav@databricks.com",
+                "tool": "execute_maintenance_action",
+                "notes": "Maintenance action recorded",
+                "action": "approved"
+            }
+        ],
+        "predicted_downtime_cost_avoided_usd": 75694.59
+    },
+    {
+        "id": 4,
+        "status": "approved",
+        "line_id": "LINE-0233",
+        "part_id": "PART-00506",
+        "priority": 2,
+        "created_at": "2026-08-27T20:06:19.154858+00:00",
+        "decided_at": "2026-08-27T20:06:21.164361+00:00",
+        "drafted_wo": "Pull LINE-0233 now; needed part is not stocked locally.",
+        "action_type": "pull_now",
+        "approved_by": "sam.ortiz@volta.example",
+        "audit_trail": [
+        ],
+        "predicted_downtime_cost_avoided_usd": 52000
+    },
+    {
+        "id": 3,
+        "status": "proposed",
+        "line_id": "LINE-0512",
+        "part_id": "PART-00487",
+        "priority": 2,
+        "created_at": "2026-08-27T19:50:38.082231+00:00",
+        "decided_at": null,
+        "drafted_wo": "Expedite local part for LINE-0512 and keep running through the shift.",
+        "action_type": "expedite_parts_and_run",
+        "approved_by": "sam.ortiz@volta.example",
+        "audit_trail": [
+        ],
+        "predicted_downtime_cost_avoided_usd": 26400
+    },
+    {
+        "id": 1,
+        "status": "executed",
+        "line_id": "LINE-0004",
+        "part_id": "PART-00516",
+        "priority": 1,
+        "created_at": "2026-08-27T18:30:07.315265+00:00",
+        "decided_at": "2026-08-27T18:44:49.87915+00:00",
+        "drafted_wo": "Pull LINE-04 now for planned maintenance; replacement part not stocked locally.",
+        "action_type": "pull_now",
+        "approved_by": "sam.ortiz@volta.example",
+        "audit_trail": [
+            {
+                "ts": "init",
+                "event": "proposed"
+            },
+            {
+                "by": "sam.ortiz@volta.example",
+                "event": "approved"
+            },
+            {
+                "event": "executed"
+            }
+        ],
+        "predicted_downtime_cost_avoided_usd": 76560
+    }
+]

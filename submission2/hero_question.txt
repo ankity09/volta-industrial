@@ -1,16 +1,35 @@
-HERO QUESTION (Build 2)
-"LINE-04 is trending toward a stop. Pull it now or run it to the end of the shift?"
+HERO QUESTION (Build 2 · Volta Industrial)
+"Line 4 is trending toward a stop. Pull it now or run it to the end of the shift?"
 
-Sam Ortiz, VP Manufacturing Operations, Volta Industrial (PLANT-03, Ohio).
+Persona: Sam Ortiz, VP Manufacturing Operations, Volta Industrial.
+The app answers this as a DECISION (surface -> prescribe -> approve -> act), not a
+lookup or a dashboard. The end-to-end run captured in these exports resolved the
+decision for the highest-value critical line the assistant ranked, LINE-0291
+(PLANT-03), and committed the approved action back to Lakebase.
 
-DECISION CHAIN (record IDs link the exports):
-1. VISUALIZE  -> app.line_status row  line_id = LINE-0004  (risk_band=critical, failure_risk_score=0.87,
-   part_local=false, downtime_exposure_usd) surfaces LINE-04 in the ranked at-risk view (view_result.json).
-2. ASSIST     -> app.maintenance_recommendations  line_id = LINE-0004  recommended_action = pull_now,
-   predicted_downtime_cost_avoided_usd = 76560, action_ranking shows run_to_shift_end net -68560,
-   expedite barely break-even (part non-local). Explanation + what-if in assist_log.jsonl; drafted memo in drafted_sample.md.
-3. ACT        -> app.work_orders_app  id = e95eb569-df8f-4a48-9e06-2f3ad0ed23e8  line_id = LINE-0004  action_type = pull_now,
-   status proposed -> approved, approved_by = <plant lead identity>, audit_trail appended.
-   The next read of line_status/open_atrisk reflects the committed decision (closed loop).
+DECISION CHAIN (record IDs link the exports)
+1. VISUALIZE  ->  app.line_status  line_id = LINE-0291
+   Surfaced in the ranked at-risk queue (view_query.sql / view_result.json):
+   risk_band = critical, failure_risk_score = 0.923, part_local = false,
+   downtime_exposure_usd = 40612. The view is refreshed by a SYSTEM trigger
+   (client dataMutated on agent write), not by a person opening it.
 
-The linked record id across all three: line_id = LINE-0004 (hero), work_orders_app.id = e95eb569-df8f-4a48-9e06-2f3ad0ed23e8 (the committed action).
+2. ASSIST     ->  app.maintenance_recommendations  line_id = LINE-0291
+   The assistant explained the flag and ran a what-if across the three plays
+   (assist_log.jsonl). ML ranking: pull_now avoids $75,694.59 (net +$61,174.59);
+   expedite_parts_and_run avoids $46,505.08; run_to_shift_end avoids only $414.01
+   (net -$55,465.99). It retrieved the candidate part context (PART-00775, non-local,
+   20-day lead) and auto-drafted the approval-ready memo (drafted_sample.md).
+
+3. ACT        ->  app.work_orders_app  id = 55  line_id = LINE-0291
+   action_type = pull_now, status = approved, approved_by = ankit.yadav@databricks.com,
+   created_at = 2026-08-28T02:39:36.642003+00:00, decided_at = 2026-08-28T02:39:36.643+00:00.
+   A person approved ("pull the line") before the write committed; the audit_trail
+   is captured in state_table.json. The next read of the live queue reflects the
+   committed decision (closed loop) - it appears in the app's RECENT ACTIVITY feed as
+   "Pull Now on LINE-0291: $75.7K downtime avoided - Approved by ankit.yadav".
+
+LINKED RECORD ID ACROSS ALL EXPORTS
+  line_id            = LINE-0291   (hero line, in view_result.json + state_table.json)
+  work_orders_app.id = 55          (the committed action, in writeback_table.json + state_table.json)
+  part_id            = PART-00775  (candidate part, non-local, 20-day lead)

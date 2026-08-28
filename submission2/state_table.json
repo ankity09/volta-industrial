@@ -1,1 +1,98 @@
-[{"work_order_id":"e95eb569-df8f-4a48-9e06-2f3ad0ed23e8","line_id":"LINE-0004","status":"approved","action_type":"pull_now","event_time":"2026-08-27 20:24:39.611628+00","actor":"volta_plant_floor_agent","event":"drafted","notes":"Drafted WO-A472 for LINE-04 pull_now after ranking (pull_now net +$36,560 vs run_to_shift_end -$68,560).","tool":"execute_maintenance_action"}, {"work_order_id":"e95eb569-df8f-4a48-9e06-2f3ad0ed23e8","line_id":"LINE-0004","status":"approved","action_type":"pull_now","event_time":"2026-08-27 20:26:09.611628+00","actor":"ankit.yadav@databricks.com","event":"approved","notes":"Plant lead approved pull now. Part non-local, unplanned stop far costlier.","tool":null}]
+[
+    {
+        "tool": "execute_maintenance_action",
+        "actor": "volta_plant_floor_agent",
+        "event": "work_order_drafted",
+        "status": "executed",
+        "line_id": "LINE-0004",
+        "event_time": "2026-08-27T18:30:07.315265+00:00",
+        "action_type": "pull_now",
+        "work_order_id": 1,
+        "trigger_source": "system.agent_write",
+        "predicted_cost_avoided_usd": 76560
+    },
+    {
+        "tool": "execute_maintenance_action",
+        "actor": "sam.ortiz@volta.example",
+        "event": "decision_committed",
+        "status": "executed",
+        "line_id": "LINE-0004",
+        "event_time": "2026-08-27T18:44:49.87915+00:00",
+        "action_type": "pull_now",
+        "work_order_id": 1,
+        "trigger_source": "human.approval",
+        "predicted_cost_avoided_usd": 76560
+    },
+    {
+        "tool": "execute_maintenance_action",
+        "actor": "volta_plant_floor_agent",
+        "event": "work_order_drafted",
+        "status": "proposed",
+        "line_id": "LINE-0512",
+        "event_time": "2026-08-27T19:50:38.082231+00:00",
+        "action_type": "expedite_parts_and_run",
+        "work_order_id": 3,
+        "trigger_source": "system.agent_write",
+        "predicted_cost_avoided_usd": 26400
+    },
+    {
+        "tool": "execute_maintenance_action",
+        "actor": "volta_plant_floor_agent",
+        "event": "work_order_drafted",
+        "status": "approved",
+        "line_id": "LINE-0233",
+        "event_time": "2026-08-27T20:06:19.154858+00:00",
+        "action_type": "pull_now",
+        "work_order_id": 4,
+        "trigger_source": "system.agent_write",
+        "predicted_cost_avoided_usd": 52000
+    },
+    {
+        "tool": "execute_maintenance_action",
+        "actor": "sam.ortiz@volta.example",
+        "event": "decision_committed",
+        "status": "approved",
+        "line_id": "LINE-0233",
+        "event_time": "2026-08-27T20:06:21.164361+00:00",
+        "action_type": "pull_now",
+        "work_order_id": 4,
+        "trigger_source": "human.approval",
+        "predicted_cost_avoided_usd": 52000
+    },
+    {
+        "tool": "execute_maintenance_action",
+        "actor": "volta_plant_floor_agent",
+        "event": "work_order_drafted",
+        "status": "approved",
+        "line_id": "LINE-0291",
+        "event_time": "2026-08-28T02:39:36.642003+00:00",
+        "action_type": "pull_now",
+        "work_order_id": 55,
+        "trigger_source": "system.agent_write",
+        "predicted_cost_avoided_usd": 75694.59
+    },
+    {
+        "tool": "execute_maintenance_action",
+        "actor": "ankit.yadav@databricks.com",
+        "event": "decision_committed",
+        "status": "approved",
+        "line_id": "LINE-0291",
+        "event_time": "2026-08-28T02:39:36.643+00:00",
+        "action_type": "pull_now",
+        "work_order_id": 55,
+        "trigger_source": "human.approval",
+        "predicted_cost_avoided_usd": 75694.59
+    },
+    {
+        "tool": "execute_maintenance_action",
+        "actor": "sam.ortiz@volta.example",
+        "event": "decision_committed",
+        "status": "proposed",
+        "line_id": "LINE-0512",
+        "event_time": null,
+        "action_type": "expedite_parts_and_run",
+        "work_order_id": 3,
+        "trigger_source": "human.approval",
+        "predicted_cost_avoided_usd": 26400
+    }
+]
