@@ -257,8 +257,17 @@ type WorstLotRow = {
   action_cost_usd: number;
   downtime_cost_avoided_usd: number;
   net_loss_usd: number;
-  avoided_unplanned_stop: boolean;
+  // The SQL statement API serializes booleans as the STRING "true"/"false"
+  // (the charts route only coerces numerics), so this arrives as a string at
+  // runtime. Read it via `avoidedStop()`, never as a raw truthy check — a
+  // non-empty "false" string is truthy in JS and would invert the label.
+  avoided_unplanned_stop: boolean | string;
 };
+
+/** Robustly read the (string-serialized) avoided_unplanned_stop flag. */
+function avoidedStop(v: boolean | string): boolean {
+  return v === true || v === 'true';
+}
 
 /** Color the net loss by severity. Uses --severity-* tokens so a re-theme
  *  picks them up; thresholds are hardcoded business logic (USD). */
@@ -352,12 +361,12 @@ function WorstLotsMobile() {
             </span>
             <span
               className={
-                row.avoided_unplanned_stop
+                avoidedStop(row.avoided_unplanned_stop)
                   ? 'text-[var(--severity-success,inherit)]'
                   : 'text-[var(--severity-danger)]'
               }
             >
-              {row.avoided_unplanned_stop ? 'Stop avoided' : 'No stop avoided'}
+              {avoidedStop(row.avoided_unplanned_stop) ? 'Stop avoided' : 'No stop avoided'}
             </span>
           </div>
         </li>
@@ -405,12 +414,12 @@ function WorstLotsTable() {
               <td className="px-3 py-2">
                 <span
                   className={
-                    row.avoided_unplanned_stop
+                    avoidedStop(row.avoided_unplanned_stop)
                       ? 'text-muted-foreground'
                       : 'text-[var(--severity-danger)]'
                   }
                 >
-                  {row.avoided_unplanned_stop ? 'Stop avoided' : 'No stop avoided'}
+                  {avoidedStop(row.avoided_unplanned_stop) ? 'Stop avoided' : 'No stop avoided'}
                 </span>
               </td>
             </tr>
