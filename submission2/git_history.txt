@@ -1,4 +1,20 @@
-* 839d0bf (HEAD -> build/volta-app) build: client builds; package.json deps completed (tw-animate-css, tailwindcss postcss/typography); fix plantfloor import path
+* b8f0075 (HEAD -> build/volta-app) evidence(assist): add executed lakebase_search.ipynb with output cells
+* 82ac291 evidence(assist): Lakebase Search execution artifacts for submission2
+* 1da21d7 feat(assist): retrieve parts from Build-1 Lakebase Search BM25 index
+* 49d994b fix(analytics): rewire charts from returns-template keys to Volta data
+* 429107b fix(operations): stop LineDrawer opening blank on load
+* 35b6b34 fix(agent): drop stale Content-Length in gateway fetch shim
+* 53a436a docs: handoff reflects verified data layer (table+KPIs live) + LineStatus export note for 3D fix
+* a002fae docs: mark /api/lines routes fixed+deployed in handoff punch list
+* 4054bf6 feat(server): implement /api/lines,plants,parts,activity routes the client needs
+* 5e93a2a docs: comprehensive handoff for next Isaac session (deploy state, punch list, gotchas)
+* dfeaf09 fix(migration): baseline 0000 to no-op (all tables exist in Brian's Lakebase; synced tables reject DDL); skip in-container db:generate; drop CONFIG_PROFILE from .env (container dual-auth)
+* 44d5d5c fix(migration): CREATE SCHEMA IF NOT EXISTS app (schema pre-exists on Brian's Lakebase; drizzle 0000 crashed on it)
+* 022b1b0 fix(runtime): pin zod 4.4.3 (@openai/agents-core needs v4; v3 crashed at module load). Local boot verified clean
+* 0b09907 fix(deploy): move build tools (vite/esbuild/tailwind/tsdown/drizzle-kit) to dependencies so container prod-install includes them
+* 2c9ad93 fix(deploy): .npmrc legacy-peer-deps for container npm, bind sql-warehouse+postgres resources, register app SP role + grants
+* 520b866 build: server via esbuild (tsdown/rolldown offline mismatch), build-app.sh legacy-peer-deps+offline, plantfloor import path fix; app created + deploying
+* 839d0bf build: client builds; package.json deps completed (tw-animate-css, tailwindcss postcss/typography); fix plantfloor import path
 * 010d968 (origin/build/volta-app) fix(schema): align work_orders_app to Brian's canonical Lakebase table
 * 526ac44 merge+integrate: 3 worktrees into build/volta-app
 *   11be6fc merge(client): retheme returns->Volta + PlantFloor3D + closed-loop refetch
