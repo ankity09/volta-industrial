@@ -69,6 +69,7 @@ interface SceneState {
 
   // Floating callout (single instance)
   callout: CSS2DObject | null;
+  calloutLineId: string | null;
 
   // Camera tween for focusLine fly-to
   camTween: {
@@ -84,6 +85,7 @@ interface SceneState {
   // Hover + selection
   selectCb: ((p: SelectPayload) => void) | null;
   hoveredMachineId: string | null;
+  pulsedHeroId: string | null;
   pointerDownPos: { x: number; y: number } | null;
 
   // Hero line tracking for pulse
@@ -207,6 +209,7 @@ export function createScene(
     pickTargets: [],
     districtLabels: [],
     callout: null,
+    calloutLineId: null,
     camTween: {
       active: false,
       t0: 0,
@@ -218,6 +221,7 @@ export function createScene(
     },
     selectCb: null,
     hoveredMachineId: null,
+    pulsedHeroId: null,
     pointerDownPos: null,
     heroLineId: null,
     activeRisk: 'all',
@@ -228,9 +232,6 @@ export function createScene(
 
   scene.add(state.envelopeGroup);
 
-  // Reused for hero pulse breathing
-  const pulseDummy = new THREE.Object3D();
-
   // Helper: hash a lineId to a stable phase [0, 2π)
   function hashToPhase(lineId: string): number {
     let hash = 0;
@@ -240,22 +241,28 @@ export function createScene(
     return ((hash % 628) / 100) * Math.PI; // [0, 2π)
   }
 
-  // Helper: set a machine's dimming (opacity/emissive)
+  // Helper: dim/restore a machine (risk-filter highlight). Captures each
+  // material's TRUE original emissiveIntensity/opacity/transparent on first
+  // dim (stored on the material's own userData) and restores exactly that, so
+  // an emphasized machine's 0.6 accent glow is not permanently downgraded to a
+  // hardcoded value after a chip toggle.
   function setMachineDim(built: BuiltMachine, dim: boolean): void {
     built.group.traverse((obj) => {
       if (obj instanceof THREE.Mesh && obj.material) {
         const mat = obj.material as THREE.MeshStandardMaterial;
+        if (mat.userData.origEmissiveIntensity === undefined) {
+          mat.userData.origEmissiveIntensity = mat.emissiveIntensity;
+          mat.userData.origOpacity = mat.opacity;
+          mat.userData.origTransparent = mat.transparent;
+        }
         if (dim) {
           mat.transparent = true;
           mat.opacity = 0.25;
           mat.emissiveIntensity = 0;
         } else {
-          mat.transparent = false;
-          mat.opacity = 1;
-          // Restore original emissiveIntensity if it was set (this is approximate)
-          if (mat.emissive && mat.emissive.getHex() !== 0) {
-            mat.emissiveIntensity = built.group.userData.originalEmissiveIntensity ?? 0.15;
-          }
+          mat.transparent = mat.userData.origTransparent as boolean;
+          mat.opacity = mat.userData.origOpacity as number;
+          mat.emissiveIntensity = mat.userData.origEmissiveIntensity as number;
         }
       }
     });
@@ -303,6 +310,7 @@ export function createScene(
     callout.position.y += 2.5; // Hover above the machine
     machine.built.group.add(callout);
     state.callout = callout;
+    state.calloutLineId = lineId;
   }
 
   // Helper: dispose current plant (machines, labels, callout, plantGroup)
@@ -322,15 +330,21 @@ export function createScene(
     });
     state.districtLabels = [];
 
-    // Remove callout
+    // Remove callout (keep calloutLineId — setPlant reads it to restore the
+    // card on the same line after a dataMutated recolor).
     if (state.callout) {
       state.callout.element?.remove?.();
       scene.remove(state.callout);
       state.callout = null;
     }
 
-    // Remove plantGroup from scene
+    // Remove plantGroup from scene, disposing its own geometry/materials first.
+    // built.dispose() already freed the machine meshes, but the per-plant
+    // DISTRICT FLOOR tiles are created directly on plantGroup (not via a
+    // BuiltMachine), so without this their GL buffers leak ~6 geometries per
+    // plant switch. Re-disposing the already-freed machine meshes is harmless.
     if (state.plantGroup) {
+      state.plantGroup.traverse(disposeMeshResources);
       scene.remove(state.plantGroup);
       state.plantGroup = null;
     }
@@ -601,17 +615,20 @@ export function createScene(
       built.animate(t, phase);
     });
 
-    // Hero machine breathing pulse (skip if hovered)
+    // Reset a previously-pulsed hero back to scale 1 when the hero changes
+    // (focusLine reassigns heroLineId), so an old hero isn't left enlarged.
+    if (state.pulsedHeroId && state.pulsedHeroId !== state.heroLineId) {
+      state.lineIdToMachine.get(state.pulsedHeroId)?.built.group.scale.set(1, 1, 1);
+      state.pulsedHeroId = null;
+    }
+
+    // Hero machine breathing pulse (skip if hovered). Group-scale breathing.
     if (state.heroLineId && state.heroLineId !== state.hoveredMachineId) {
       const hero = state.lineIdToMachine.get(state.heroLineId);
       if (hero) {
         const pop = 1 + 0.06 * Math.sin(t * 4.5);
-        pulseDummy.position.copy(hero.built.group.position);
-        pulseDummy.scale.set(pop, pop, pop);
-        pulseDummy.updateMatrix();
-        // We don't use instanceMatrix anymore, so just skip this.
-        // The hero breathing is handled via the group scale during render.
         hero.built.group.scale.set(pop, pop, pop);
+        state.pulsedHeroId = state.heroLineId;
       }
     }
   }
@@ -648,6 +665,12 @@ export function createScene(
   const handle: SceneHandle = {
     setPlant(model: PlantSceneModel): void {
       if (state.disposed) return;
+
+      // Remember which line's callout was showing so we can restore it after a
+      // recolor (the dataMutated close-the-loop beat calls setPlant; without
+      // this the hero's telemetry card would silently vanish on a work-order
+      // approval).
+      const prevCalloutLineId = state.calloutLineId;
 
       // Dispose previous plant (NOT the envelope)
       disposePlant();
@@ -704,8 +727,7 @@ export function createScene(
 
         built.group.position.set(machineModel.x, 0, machineModel.z);
 
-        // Set body userData for raycast
-        built.body.userData = {
+        const userData = {
           lineId: machineModel.lineId,
           plantId: model.plantId,
           lineName: machineModel.lineName,
@@ -714,7 +736,30 @@ export function createScene(
         };
 
         state.plantGroup!.add(built.group);
-        state.pickTargets.push(built.body);
+
+        // Raycast against an INVISIBLE bounding-box proxy sized to the whole
+        // machine, not built.body (which on 4 of 6 types is a small non-central
+        // sub-mesh — the crown bar / top rail / base slab — so clicks + hover
+        // would miss the obvious mass). The proxy makes the full footprint
+        // clickable + hoverable. It carries the userData; built.body does too
+        // (harmless) so either resolves to the same line.
+        built.group.updateMatrixWorld(true);
+        const bbox = new THREE.Box3().setFromObject(built.group);
+        const size = bbox.getSize(new THREE.Vector3());
+        const center = bbox.getCenter(new THREE.Vector3());
+        const proxyGeo = new THREE.BoxGeometry(
+          Math.max(size.x, 0.5),
+          Math.max(size.y, 0.5),
+          Math.max(size.z, 0.5),
+        );
+        const proxyMat = new THREE.MeshBasicMaterial({ visible: false });
+        const proxy = new THREE.Mesh(proxyGeo, proxyMat);
+        // Position in group-local space (group is at machineModel.x/0/z).
+        proxy.position.set(center.x - machineModel.x, center.y, center.z - machineModel.z);
+        proxy.userData = userData;
+        built.body.userData = userData;
+        built.group.add(proxy);
+        state.pickTargets.push(proxy);
 
         const phase = hashToPhase(machineModel.lineId);
         const instance = { lineId: machineModel.lineId, phase, built, model: machineModel };
@@ -727,6 +772,14 @@ export function createScene(
         state.machines.forEach(({ built, model: m }) => {
           setMachineDim(built, m.riskBand !== state.activeRisk);
         });
+      }
+
+      // Restore the floating callout on the same line if it survived the
+      // rebuild (dataMutated recolor keeps the card in place; no re-fly).
+      if (prevCalloutLineId && state.lineIdToMachine.has(prevCalloutLineId)) {
+        showCalloutFor(prevCalloutLineId);
+      } else {
+        state.calloutLineId = null;
       }
     },
 

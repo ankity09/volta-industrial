@@ -73,25 +73,34 @@ export function plantToScene(lines: LineStatus[]): PlantSceneModel {
     };
   }
 
-  // Determine plantId from first line
+  // Determine plantId from the first raw line (before filtering, so a plant
+  // whose rows all have an unrecognized machineType still reports its id).
   const plantId = lines[0].plantId;
 
-  // Count risk bands globally
+  // Crash insurance: drop any line whose machineType isn't one of the 6 known
+  // types. The engine's buildMachine() is a non-default switch that returns
+  // undefined for an out-of-union value, which would throw and take down the
+  // whole 3D tab; dropping one bad row degrades gracefully instead. Safe for
+  // the current seeded data (all 6 types present); guards against data drift.
+  const knownTypes = new Set<string>(CANONICAL_MACHINE_TYPES);
+  const validLines = lines.filter((l) => knownTypes.has(l.machineType));
+
+  // Count risk bands over the lines we actually render.
   const counts: SceneCounts = {
-    total: lines.length,
+    total: validLines.length,
     critical: 0,
     elevated: 0,
     watch: 0,
     healthy: 0,
   };
 
-  for (const line of lines) {
+  for (const line of validLines) {
     counts[line.riskBand]++;
   }
 
   // Group lines by machineType
   const linesByType = new Map<MachineType, LineStatus[]>();
-  for (const line of lines) {
+  for (const line of validLines) {
     const machineType = line.machineType as MachineType;
     if (!linesByType.has(machineType)) {
       linesByType.set(machineType, []);
@@ -170,7 +179,7 @@ export function plantToScene(lines: LineStatus[]): PlantSceneModel {
     plantId,
     neighborhoods,
     machines,
-    heroLineId: pickHero(lines),
+    heroLineId: pickHero(validLines),
     counts,
   };
 }

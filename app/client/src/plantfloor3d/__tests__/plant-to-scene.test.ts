@@ -109,4 +109,19 @@ describe('plantToScene', () => {
     expect(m.heroLineId).toBeNull();
     expect(m.counts.total).toBe(0);
   });
+
+  it('drops lines with an unknown machineType (crash insurance) and still reports plantId', () => {
+    const m = plantToScene([
+      line({ lineId: 'ok', plantId: 'PLANT-05', machineType: 'CNC_Mill', riskBand: 'critical', downtimeExposureUsd: 100 }),
+      // A drifted row with a type not in the 6-type union — must be dropped,
+      // not crash the tab.
+      line({ lineId: 'bad', plantId: 'PLANT-05', machineType: 'Laser_Cutter' as unknown as MachineType, riskBand: 'critical', downtimeExposureUsd: 999 }),
+    ]);
+    expect(m.machines.map((x) => x.lineId)).toEqual(['ok']);
+    expect(m.neighborhoods).toHaveLength(1);
+    expect(m.counts.total).toBe(1);
+    // Hero is the valid line, never the dropped one (despite its higher exposure).
+    expect(m.heroLineId).toBe('ok');
+    expect(m.plantId).toBe('PLANT-05');
+  });
 });
