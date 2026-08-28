@@ -11,6 +11,7 @@
  *
  * Chrome (sidebar + header) lives in shell/.
  */
+import { lazy, Suspense } from 'react';
 import { createBrowserRouter, RouterProvider, Outlet } from 'react-router';
 import { SidebarInset, SidebarProvider } from '@databricks/appkit-ui/react';
 
@@ -25,6 +26,15 @@ import { DashboardView } from '@/dashboard/DashboardView';
 import { PlatformView } from '@/platform/PlatformView';
 import { SessionProvider } from '@/lib/api';
 import { RouteError } from './RouteError';
+
+// Lazy so the Three.js payload only loads on the Plant Floor 3D route.
+// `.then(m => ({ default: … }))` adapts the module's NAMED export to the
+// default export React.lazy expects.
+const PlantFloor3DView = lazy(() =>
+  import('@/plantfloor3d/PlantFloor3DView').then((m) => ({
+    default: m.PlantFloor3DView,
+  })),
+);
 
 function Layout() {
   // SessionProvider wraps everything so /api/me and /api/config are
@@ -70,6 +80,18 @@ const router = createBrowserRouter(
         { path: '/', element: <HomeView /> },
         { path: '/c/:id', element: <ChatView /> },
         { path: '/operations', element: <OperationsView /> },
+        {
+          path: '/plant-floor-3d',
+          element: (
+            <Suspense
+              fallback={
+                <div className="h-[calc(100vh-3.5rem)] bg-muted animate-pulse" />
+              }
+            >
+              <PlantFloor3DView />
+            </Suspense>
+          ),
+        },
         { path: '/analytics', element: <AnalyticsView /> },
         { path: '/dashboard', element: <DashboardView /> },
         { path: '/platform', element: <PlatformView /> },
