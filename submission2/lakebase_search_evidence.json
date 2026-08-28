@@ -1,0 +1,89 @@
+{
+  "evidence": "Assistant part retrieval uses the Build-1 Lakebase Search BM25 index (no separate vector store).",
+  "table": "app.parts",
+  "search_indexes": [
+    {
+      "def": "CREATE INDEX idx_parts_ann ON app.parts USING lakebase_ann (embedding vector_cosine_ops)",
+      "name": "idx_parts_ann"
+    },
+    {
+      "def": "CREATE INDEX idx_parts_bm25 ON app.parts USING lakebase_bm25 (search_tsv)",
+      "name": "idx_parts_bm25"
+    }
+  ],
+  "query_tool": "search_parts (server/agent/tools -> server/db/queries/maintenance.ts::searchParts)",
+  "bm25_operator": "search_tsv <@> to_bm25query(to_tsvector('english', :q), 'app.idx_parts_bm25')  -- lakebase_text; more-negative = more relevant",
+  "example_query_text": "spindle for hydraulic press",
+  "example_results": [
+    {
+      "part_id": "PART-00281",
+      "part_name": "spindle Hydraulic_Press",
+      "part_type": "spindle",
+      "bm25_score": -6.6217,
+      "part_local": true,
+      "lead_time_days": 18
+    },
+    {
+      "part_id": "PART-00055",
+      "part_name": "spindle Hydraulic_Press",
+      "part_type": "spindle",
+      "bm25_score": -6.6217,
+      "part_local": true,
+      "lead_time_days": 11
+    },
+    {
+      "part_id": "PART-00670",
+      "part_name": "spindle Hydraulic_Press",
+      "part_type": "spindle",
+      "bm25_score": -6.6217,
+      "part_local": true,
+      "lead_time_days": 16
+    },
+    {
+      "part_id": "PART-00699",
+      "part_name": "spindle Hydraulic_Press",
+      "part_type": "spindle",
+      "bm25_score": -6.6217,
+      "part_local": true,
+      "lead_time_days": 14
+    },
+    {
+      "part_id": "PART-00031",
+      "part_name": "spindle Hydraulic_Press",
+      "part_type": "spindle",
+      "bm25_score": -6.6217,
+      "part_local": true,
+      "lead_time_days": 1
+    },
+    {
+      "part_id": "PART-00576",
+      "part_name": "spindle Hydraulic_Press",
+      "part_type": "spindle",
+      "bm25_score": -6.6217,
+      "part_local": true,
+      "lead_time_days": 12
+    },
+    {
+      "part_id": "PART-00584",
+      "part_name": "spindle Hydraulic_Press",
+      "part_type": "spindle",
+      "bm25_score": -6.6217,
+      "part_local": true,
+      "lead_time_days": 16
+    },
+    {
+      "part_id": "PART-00072",
+      "part_name": "spindle Hydraulic_Press",
+      "part_type": "spindle",
+      "bm25_score": -6.6217,
+      "part_local": true,
+      "lead_time_days": 8
+    }
+  ],
+  "index_usage_proof": {
+    "explain_node_type": "Index Scan",
+    "explain_index_name": "idx_parts_bm25",
+    "note": "EXPLAIN confirms an Index Scan using idx_parts_bm25 (the lakebase_bm25 index), i.e. retrieval is served by the Lakebase Search index, not a table scan or an external store."
+  },
+  "captured_at_utc": "2026-08-28T03:19:53.215280Z"
+}

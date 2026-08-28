@@ -1,0 +1,92 @@
+[
+    {
+        "part_id": "PART-00031",
+        "part_name": "spindle Hydraulic_Press",
+        "part_type": "spindle",
+        "bm25_score": -6.6217,
+        "part_local": true,
+        "unit_cost_usd": 848.09,
+        "lead_time_days": 1
+    },
+    {
+        "part_id": "PART-00731",
+        "part_name": "spindle Hydraulic_Press",
+        "part_type": "spindle",
+        "bm25_score": -6.6217,
+        "part_local": true,
+        "unit_cost_usd": 3721.82,
+        "lead_time_days": 8
+    },
+    {
+        "part_id": "PART-00281",
+        "part_name": "spindle Hydraulic_Press",
+        "part_type": "spindle",
+        "bm25_score": -6.6217,
+        "part_local": true,
+        "unit_cost_usd": 2033.21,
+        "lead_time_days": 18
+    },
+    {
+        "part_id": "PART-00699",
+        "part_name": "spindle Hydraulic_Press",
+        "part_type": "spindle",
+        "bm25_score": -6.6217,
+        "part_local": true,
+        "unit_cost_usd": 3745.5,
+        "lead_time_days": 14
+    },
+    {
+        "part_id": "PART-00055",
+        "part_name": "spindle Hydraulic_Press",
+        "part_type": "spindle",
+        "bm25_score": -6.6217,
+        "part_local": true,
+        "unit_cost_usd": 3411.29,
+        "lead_time_days": 11
+    },
+    {
+        "part_id": "PART-00072",
+        "part_name": "spindle Hydraulic_Press",
+        "part_type": "spindle",
+        "bm25_score": -6.6217,
+        "part_local": true,
+        "unit_cost_usd": 2024.88,
+        "lead_time_days": 8
+    },
+    {
+        "part_id": "PART-00584",
+        "part_name": "spindle Hydraulic_Press",
+        "part_type": "spindle",
+        "bm25_score": -6.6217,
+        "part_local": true,
+        "unit_cost_usd": 3493.33,
+        "lead_time_days": 16
+    },
+    {
+        "part_id": "PART-00670",
+        "part_name": "spindle Hydraulic_Press",
+        "part_type": "spindle",
+        "bm25_score": -6.6217,
+        "part_local": true,
+        "unit_cost_usd": 688.04,
+        "lead_time_days": 16
+    },
+    {
+        "part_id": "PART-00576",
+        "part_name": "spindle Hydraulic_Press",
+        "part_type": "spindle",
+        "bm25_score": -6.6217,
+        "part_local": true,
+        "unit_cost_usd": 2028.23,
+        "lead_time_days": 12
+    },
+    {
+        "part_id": "PART-00327",
+        "part_name": "spindle Hydraulic_Press",
+        "part_type": "spindle",
+        "bm25_score": -6.1783,
+        "part_local": false,
+        "unit_cost_usd": 1833.72,
+        "lead_time_days": 12
+    }
+]

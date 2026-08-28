@@ -1,0 +1,59 @@
+# Lakebase Search — execution transcript
+# Proves the assistant's search_parts retrieval runs against the Build-1 Lakebase Search
+# BM25 index idx_parts_bm25 (lakebase_bm25 over app.parts.search_tsv). Executed live against
+# projects/volta/branches/development, db=volta, host=ep-silent-meadow-d8pjy4fh (Lakebase Postgres).
+# Run at: 2026-08-28T03:27:58Z  by: ankit.yadav@databricks.com
+
+## [1] IN — confirm the Lakebase Search indexes exist on app.parts
+SELECT indexname, indexdef FROM pg_indexes WHERE schemaname='app' AND tablename='parts' AND indexname LIKE 'idx_parts%';
+
+## [1] OUT
+   indexname    |                                         indexdef                                         
+----------------+------------------------------------------------------------------------------------------
+ idx_parts_ann  | CREATE INDEX idx_parts_ann ON app.parts USING lakebase_ann (embedding vector_cosine_ops)
+ idx_parts_bm25 | CREATE INDEX idx_parts_bm25 ON app.parts USING lakebase_bm25 (search_tsv)
+(2 rows)
+
+
+## [2] IN — the exact BM25 query searchParts() runs (server/db/queries/maintenance.ts)
+SELECT part_id, part_name, part_type, (local_stock_qty>0) AS part_local, lead_time_days,
+       (search_tsv <@> to_bm25query(to_tsvector('english','spindle for hydraulic press'),'app.idx_parts_bm25')) AS bm25_score
+FROM app.parts
+WHERE (search_tsv <@> to_bm25query(to_tsvector('english','spindle for hydraulic press'),'app.idx_parts_bm25')) < 0
+ORDER BY bm25_score ASC LIMIT 10;
+
+## [2] OUT
+  part_id   |        part_name        | part_type | part_local | lead_time_days | bm25_score 
+------------+-------------------------+-----------+------------+----------------+------------
+ PART-00031 | spindle Hydraulic_Press | spindle   | t          |              1 |    -6.6217
+ PART-00731 | spindle Hydraulic_Press | spindle   | t          |              8 |    -6.6217
+ PART-00281 | spindle Hydraulic_Press | spindle   | t          |             18 |    -6.6217
+ PART-00699 | spindle Hydraulic_Press | spindle   | t          |             14 |    -6.6217
+ PART-00055 | spindle Hydraulic_Press | spindle   | t          |             11 |    -6.6217
+ PART-00072 | spindle Hydraulic_Press | spindle   | t          |              8 |    -6.6217
+ PART-00584 | spindle Hydraulic_Press | spindle   | t          |             16 |    -6.6217
+ PART-00670 | spindle Hydraulic_Press | spindle   | t          |             16 |    -6.6217
+ PART-00576 | spindle Hydraulic_Press | spindle   | t          |             12 |    -6.6217
+ PART-00327 | spindle Hydraulic_Press | spindle   | f          |             12 |    -6.1783
+(10 rows)
+
+
+## [3] IN — EXPLAIN ANALYZE proves the query is SERVED BY the BM25 index (not a scan / external store)
+EXPLAIN ANALYZE SELECT part_id FROM app.parts
+ WHERE (search_tsv <@> to_bm25query(to_tsvector('english','spindle'),'app.idx_parts_bm25')) < 0
+ ORDER BY (search_tsv <@> to_bm25query(to_tsvector('english','spindle'),'app.idx_parts_bm25')) ASC LIMIT 10;
+
+## [3] OUT
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.00..4.02 rows=1 width=19) (actual time=0.112..0.165 rows=10 loops=1)
+   ->  Index Scan using idx_parts_bm25 on parts  (cost=0.00..4.02 rows=1 width=19) (actual time=0.111..0.164 rows=10 loops=1)
+         Order By: (search_tsv <@> '(''spindl'':1,app.idx_parts_bm25)'::bm25query_tsvector)
+         Filter: ((search_tsv <@> '(''spindl'':1,app.idx_parts_bm25)'::bm25query_tsvector) < '0'::double precision)
+ Planning Time: 1.152 ms
+ Execution Time: 0.244 ms
+(6 rows)
+
+
+# RESULT: The Index Scan node names idx_parts_bm25 — retrieval executes against the Build-1
+# Lakebase Search BM25 index, inside the governed Lakebase. No separate vector store is used.
