@@ -253,7 +253,7 @@ export type MaintenanceActionOption = {
 export type MaintenanceAuditEntry = {
   at: string;
   by: string;
-  action: 'approved' | 'rejected' | 'drafted' | 'maintenance_scheduled';
+  action: 'approved' | 'rejected' | 'drafted' | 'maintenance_scheduled' | 'overridden';
   notes?: string;
   tool?: string;
 };

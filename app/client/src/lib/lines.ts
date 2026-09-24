@@ -94,12 +94,13 @@ export async function executeMaintenanceAction(
   action: ActionType,
   partId: string | null,
   draftedWo: string,
+  opts: { status?: 'approved' | 'overridden'; note?: string } = {},
 ): Promise<WorkOrderApp> {
   const res = await okOrThrow(
     await fetch(`/api/lines/${lineId}/work-order`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, partId, draftedWo }),
+      body: JSON.stringify({ action, partId, draftedWo, ...opts }),
     }),
     `/api/lines/${lineId}/work-order`,
   );

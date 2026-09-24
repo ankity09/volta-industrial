@@ -127,6 +127,8 @@ export function registerLinesRoutes(app: Application, db: AppDb): void {
         action?: unknown;
         partId?: unknown;
         draftedWo?: unknown;
+        status?: unknown;
+        note?: unknown;
       };
 
       if (!isActionType(body.action)) {
@@ -146,6 +148,13 @@ export function registerLinesRoutes(app: Application, db: AppDb): void {
         res.status(400).json({ error: 'Missing "draftedWo" text.' });
         return;
       }
+      // Optional decision status: the Recommendation tab's Approve button omits
+      // it (defaults to 'approved'); the Override button sends 'overridden' when
+      // the operator picks an action other than the model's recommendation.
+      // Anything else falls back to 'approved' so a bad value can't 500.
+      const status: 'approved' | 'overridden' =
+        body.status === 'overridden' ? 'overridden' : 'approved';
+      const note = typeof body.note === 'string' && body.note.length > 0 ? body.note : undefined;
 
       // The client POST carries no predicted-cost figure; pull it from the
       // line's recommendation (the chosen action's avoided cost) so the row's
@@ -165,6 +174,9 @@ export function registerLinesRoutes(app: Application, db: AppDb): void {
         draftedWorkOrder: draftedWo,
         predictedDowntimeCostAvoidsUsd,
         userEmail: getCurrentUserEmail(req),
+        status,
+        auditAction: status === 'overridden' ? 'overridden' : 'approved',
+        note,
       });
 
       // The write is committed. Return the persisted row so the caller (and the

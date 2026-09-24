@@ -216,14 +216,28 @@ export async function recordMaintenanceAction(
     draftedWorkOrder: string;
     predictedDowntimeCostAvoidsUsd: number | null;
     userEmail: string;
+    /**
+     * The persisted work-order status + how the audit entry reads. Defaults to
+     * the agent's Phase-3 behavior (`approved`) so existing callers are
+     * unchanged. The Recommendation-tab "Override" button passes
+     * `status: 'overridden'` with `auditAction: 'overridden'` when the operator
+     * picks an action OTHER than the model's recommendation (human-in-the-loop
+     * override). `note` overrides the default audit note (used to record what
+     * was overridden, e.g. "Operator override — pull_now over model pick
+     * run_to_shift_end").
+     */
+    status?: 'approved' | 'overridden';
+    auditAction?: MaintenanceAuditEntry['action'];
+    note?: string;
   },
 ): Promise<{ actionId: string }> {
+  const status = args.status ?? 'approved';
   const auditTrail: MaintenanceAuditEntry[] = [
     {
       at: new Date().toISOString(),
       by: args.userEmail,
-      action: 'approved',
-      notes: 'Maintenance action recorded',
+      action: args.auditAction ?? 'approved',
+      notes: args.note ?? 'Maintenance action recorded',
       tool: 'execute_maintenance_action',
     },
   ];
@@ -237,7 +251,7 @@ export async function recordMaintenanceAction(
         partId: args.partId,
         draftedWo: args.draftedWorkOrder,
         predictedDowntimeCostAvoidsUsd: args.predictedDowntimeCostAvoidsUsd,
-        status: 'approved',
+        status,
         approvedBy: args.userEmail,
         auditTrail,
         decidedAt: new Date(),
